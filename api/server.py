@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, subprocess, uuid, time, zipfile, socket, ipaddress, os
+import json, subprocess, uuid, time, zipfile, socket, ipaddress, os, shutil
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
@@ -11,12 +11,16 @@ AREAS = {
     "cameras": BASE / "Cameras",
     "backups": BASE / "Backups",
     "logs": BASE / "Logs",
-    "trash": BASE / "Trash"
+    "trash": BASE / "Trash",
+    "media": BASE / "Media",
+    "downloads": BASE / "Downloads",
+    "documents": BASE / "Documents",
 }
 WEB = BASE / "Web"
 CONFIG = BASE / "Config"
 CAMERA_FILE = CONFIG / "cameras.json"
 SETTINGS_FILE = CONFIG / "settings.json"
+NOTIFY_FILE = CONFIG / "notifications.json"
 
 for p in list(AREAS.values()) + [WEB, CONFIG]:
     p.mkdir(parents=True, exist_ok=True)
@@ -24,11 +28,15 @@ for p in list(AREAS.values()) + [WEB, CONFIG]:
 if not CAMERA_FILE.exists():
     CAMERA_FILE.write_text("[]", encoding="utf-8")
 
+if not NOTIFY_FILE.exists():
+    NOTIFY_FILE.write_text("[]", encoding="utf-8")
+
 if not SETTINGS_FILE.exists():
     SETTINGS_FILE.write_text(json.dumps({
         "camera_retention_days": 30,
         "auto_delete_when_disk_above": 90,
         "backup_hour": "02:00",
+        "theme": "dark",
         "notifications": True
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -47,6 +55,17 @@ def jload(path, default):
 def jsave(path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def notify(title, message, level="info"):
+    items = jload(NOTIFY_FILE, [])
+    items.insert(0, {
+        "id": uuid.uuid4().hex[:8],
+        "title": title,
+        "message": message,
+        "level": level,
+        "time": time.strftime("%d/%m/%Y %H:%M:%S")
+    })
+    jsave(NOTIFY_FILE, items[:50])
+
 def safe(n):
     return Path(n).name
 
@@ -59,6 +78,7 @@ def media_type(p):
     if ext in [".mp4", ".webm", ".mov", ".mkv", ".avi"]: return "video"
     if ext == ".pdf": return "pdf"
     if ext in [".mp3", ".wav", ".ogg", ".m4a"]: return "audio"
+    if ext in [".zip",".rar",".7z",".tar",".gz"]: return "archive"
     return "other"
 
 def list_items(area, query="", sort="name"):
@@ -80,13 +100,12 @@ def list_items(area, query="", sort="name"):
             })
         except Exception:
             pass
-
     if sort == "date":
         rows.sort(key=lambda x: x["modified_ts"], reverse=True)
     elif sort == "size":
         rows.sort(key=lambda x: x["size"], reverse=True)
     else:
-        rows.sort(key=lambda x: x["name"].lower())
+        rows.sort(key=lambda x: (x["type"] != "folder", x["name"].lower()))
     return rows
 
 def folder_size(path):
@@ -107,18 +126,20 @@ def status():
     uptime = run("uptime -p 2>/dev/null") or "indisponível"
     cams = jload(CAMERA_FILE, [])
     online = len([c for c in cams if c.get("status") == "online"])
+    used_percent = run(f"df {HOME} | awk 'NR==2 {{print $5}}'")
     return {
         "ip": ip,
         "nginx": "Ativo" if run("pgrep nginx") else "Parado",
         "api": "Ativa",
         "disk": run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),
-        "used": run(f"df {HOME} | awk 'NR==2 {{print $5}}'"),
+        "used": used_percent,
         "mem": mem or "indisponível",
         "uptime": uptime,
         "files": len([p for p in AREAS["files"].rglob("*") if p.is_file()]),
         "camera_files": len([p for p in AREAS["cameras"].rglob("*") if p.is_file()]),
         "backup_files": len([p for p in AREAS["backups"].rglob("*") if p.is_file()]),
         "trash_files": len([p for p in AREAS["trash"].rglob("*") if p.is_file()]),
+        "media_files": len([p for p in AREAS["media"].rglob("*") if p.is_file()]),
         "cameras_total": len(cams),
         "cameras_online": online,
         "settings": jload(SETTINGS_FILE, {}),
@@ -127,9 +148,10 @@ def status():
     }
 
 def parse_multipart(ct, body):
-    if "boundary=" not in ct: return None, None
-    boundary = ct.split("boundary=",1)[1].strip().strip('"')
-    for part in body.split(("--"+boundary).encode()):
+    if "boundary=" not in ct:
+        return None, None
+    boundary = ct.split("boundary=", 1)[1].strip().strip('"')
+    for part in body.split(("--" + boundary).encode()):
         if b"Content-Disposition" not in part or b"\r\n\r\n" not in part:
             continue
         h, c = part.split(b"\r\n\r\n", 1)
@@ -140,22 +162,23 @@ def parse_multipart(ct, body):
         for piece in hs.split(";"):
             piece = piece.strip()
             if piece.startswith("filename="):
-                fn = piece.split("=",1)[1].strip().strip('"')
-        if fn: return safe(fn), c
+                fn = piece.split("=", 1)[1].strip().strip('"')
+        if fn:
+            return safe(fn), c
     return None, None
 
 def send_file(handler, path, download=False):
     data = path.read_bytes()
     ext = path.suffix.lower()
     ctype = "application/octet-stream"
-    if ext in [".jpg",".jpeg"]: ctype="image/jpeg"
-    elif ext == ".png": ctype="image/png"
-    elif ext == ".webp": ctype="image/webp"
-    elif ext == ".gif": ctype="image/gif"
-    elif ext == ".mp4": ctype="video/mp4"
-    elif ext == ".webm": ctype="video/webm"
-    elif ext == ".pdf": ctype="application/pdf"
-    elif ext == ".mp3": ctype="audio/mpeg"
+    if ext in [".jpg",".jpeg"]: ctype = "image/jpeg"
+    elif ext == ".png": ctype = "image/png"
+    elif ext == ".webp": ctype = "image/webp"
+    elif ext == ".gif": ctype = "image/gif"
+    elif ext == ".mp4": ctype = "video/mp4"
+    elif ext == ".webm": ctype = "video/webm"
+    elif ext == ".pdf": ctype = "application/pdf"
+    elif ext == ".mp3": ctype = "audio/mpeg"
     handler.send_response(200)
     handler.send_header("Content-Type", ctype)
     handler.send_header("Access-Control-Allow-Origin", "*")
@@ -177,7 +200,7 @@ def scan_network():
     if ip == "não encontrado":
         return []
     net = ipaddress.ip_network(ip + "/24", strict=False)
-    ports = [554, 8554, 80, 8080, 8899, 5000]
+    ports = [554, 8554, 80, 8080, 8899, 5000, 8000]
     results = []
     for host in list(net.hosts()):
         h = str(host)
@@ -189,6 +212,7 @@ def scan_network():
             if 554 in open_ports or 8554 in open_ports: kind = "Possível RTSP"
             if 8899 in open_ports: kind = "Possível Yoosee"
             results.append({"ip": h, "ports": open_ports, "type": kind})
+    notify("Descoberta concluída", f"{len(results)} dispositivo(s) encontrado(s).")
     return results
 
 def rtsp_candidates(ip, user="", password=""):
@@ -220,7 +244,17 @@ def cleanup_old_cameras(days):
         if p.is_file() and p.stat().st_mtime < limit:
             p.rename(AREAS["trash"] / f"{uuid.uuid4().hex}_{p.name}")
             removed += 1
+    if removed:
+        notify("Limpeza concluída", f"{removed} gravação(ões) movidas para lixeira.", "warning")
     return removed
+
+def library_stats():
+    counts = {"image":0, "video":0, "audio":0, "pdf":0, "archive":0, "other":0}
+    for area in ["files","cameras","media","documents","downloads"]:
+        for p in area_dir(area).rglob("*"):
+            if p.is_file():
+                counts[media_type(p)] = counts.get(media_type(p),0) + 1
+    return counts
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): return
@@ -246,10 +280,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path); q = parse_qs(u.query)
-
         if u.path == "/api/status": self.j(status()); return
         if u.path == "/api/settings": self.j(jload(SETTINGS_FILE, {})); return
         if u.path == "/api/timeline": self.j({"items": timeline()}); return
+        if u.path == "/api/library": self.j(library_stats()); return
+        if u.path == "/api/notifications": self.j({"items": jload(NOTIFY_FILE, [])}); return
 
         if u.path == "/api/files":
             a = q.get("area", ["files"])[0]
@@ -286,7 +321,15 @@ class H(BaseHTTPRequestHandler):
             if not fn:
                 fn = f"upload_{uuid.uuid4().hex}.bin"; content = body
             (area_dir(a) / safe(fn)).write_bytes(content)
+            notify("Upload recebido", f"{safe(fn)} enviado para {a}.")
             self.j({"ok": True, "file": safe(fn)}); return
+
+        if u.path == "/api/mkdir":
+            data = self.body_json()
+            a = data.get("area", "files")
+            name = safe(data.get("name", "Nova pasta"))
+            (area_dir(a) / name).mkdir(exist_ok=True)
+            self.j({"ok": True}); return
 
         if u.path == "/api/rename":
             a = q.get("area", ["files"])[0]
@@ -304,6 +347,7 @@ class H(BaseHTTPRequestHandler):
                 for base in [AREAS["files"], AREAS["cameras"], CONFIG]:
                     for p in base.rglob("*"):
                         if p.is_file(): z.write(p, p.relative_to(BASE))
+            notify("Backup concluído", target.name, "success")
             self.j({"ok": True, "file": target.name}); return
 
         if u.path == "/api/restore":
@@ -319,6 +363,7 @@ class H(BaseHTTPRequestHandler):
             settings = jload(SETTINGS_FILE, {})
             settings.update(data)
             jsave(SETTINGS_FILE, settings)
+            notify("Configurações salvas", "Preferências atualizadas.", "success")
             self.j({"ok": True, "settings": settings}); return
 
         if u.path == "/api/cleanup":
@@ -343,10 +388,12 @@ class H(BaseHTTPRequestHandler):
                 "rtsp": data.get("rtsp", ""),
                 "quality": data.get("quality", "media"),
                 "retention": data.get("retention", "30"),
+                "recording": data.get("recording", "manual"),
                 "folder": str(folder),
                 "status": "online" if data.get("ip") and (test_port(data.get("ip"), 554) or test_port(data.get("ip"), 8554) or test_port(data.get("ip"), 80)) else "cadastrada"
             }
             cams.append(cam); jsave(CAMERA_FILE, cams)
+            notify("Câmera adicionada", name, "success")
             self.j({"ok": True, "camera": cam}); return
 
         if u.path == "/api/camera/delete":
@@ -354,6 +401,18 @@ class H(BaseHTTPRequestHandler):
             cam_id = data.get("id")
             cams = [c for c in jload(CAMERA_FILE, []) if c.get("id") != cam_id]
             jsave(CAMERA_FILE, cams)
+            self.j({"ok": True}); return
+
+        if u.path == "/api/camera/check":
+            cams = jload(CAMERA_FILE, [])
+            for c in cams:
+                ip = c.get("ip")
+                c["status"] = "online" if ip and (test_port(ip, 554) or test_port(ip, 8554) or test_port(ip, 80)) else "offline"
+            jsave(CAMERA_FILE, cams)
+            self.j({"ok": True, "items": cams}); return
+
+        if u.path == "/api/notifications/clear":
+            jsave(NOTIFY_FILE, [])
             self.j({"ok": True}); return
 
         self.j({"error": "rota não encontrada"}, 404)
@@ -370,5 +429,5 @@ class H(BaseHTTPRequestHandler):
             self.j({"error": "arquivo não encontrado"}, 404); return
         self.j({"error": "rota não encontrada"}, 404)
 
-print("LG Home Server API v8.1 rodando na porta 8090")
+print("LG Home Server API v9 rodando na porta 8090")
 HTTPServer(("0.0.0.0", 8090), H).serve_forever()

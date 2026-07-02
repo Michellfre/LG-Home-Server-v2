@@ -1,3 +1,3 @@
-# LG Home Server v8.1 Pro
+# LG Home Server v9 Ultimate
 
-Adiciona drag and drop, ordenação, timeline, configurações de retenção e limpeza de gravações antigas.
+NAS, explorer, biblioteca, central de câmeras, notificações e backup.
