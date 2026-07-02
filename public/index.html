@@ -1,47 +1,40 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LG Home Server</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LG Home Server v5</title>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="logo">LG</div>
-      <div><h1>Home Server</h1><p>K41S • Termux</p></div>
-    </div>
-    <a class="active">🏠 Dashboard</a>
-    <a>📷 Câmeras</a>
-    <a>📁 Arquivos</a>
-    <a>💾 Backups</a>
-    <a>📊 Status</a>
-    <a>⚙️ Configurações</a>
-  </aside>
+<aside class="sidebar">
+  <div class="brand"><div class="logo">LG</div><div><h1>Home Server</h1><p>K41S • v5</p></div></div>
+  <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a>
+  <a onclick="showPage('files')">📁 Arquivos</a>
+  <a onclick="showPage('cameras')">📷 Câmeras</a>
+  <a onclick="showPage('backups')">💾 Backups</a>
+  <a onclick="showPage('status')">📊 Status</a>
+</aside>
+<main>
+<header><div><h2 id="page-title">Dashboard</h2><p>Servidor doméstico rodando no LG K41S</p></div><span class="pill">● Online</span></header>
 
-  <main>
-    <header>
-      <div><h2>Dashboard</h2><p>Servidor doméstico rodando no LG K41S</p></div>
-      <span class="pill">● Online</span>
-    </header>
+<section id="dashboard" class="page active-page">
+ <div class="cards">
+  <div class="card"><h3>📡 IP</h3><p id="ip">...</p></div>
+  <div class="card"><h3>🌐 Nginx</h3><p id="nginx">...</p></div>
+  <div class="card"><h3>🧩 API</h3><p id="api">...</p></div>
+  <div class="card"><h3>💾 Disco</h3><p id="disk">...</p></div>
+  <div class="card"><h3>📁 Arquivos</h3><p><span id="files_count">...</span></p></div>
+  <div class="card"><h3>📷 Câmeras</h3><p><span id="camera_files">...</span></p></div>
+ </div>
+ <section class="panel"><h3>Status</h3><div class="row"><span>Uso</span><b id="used">...</b></div><div class="row"><span>Atualizado</span><b id="updated">...</b></div></section>
+</section>
 
-    <section class="cards">
-      <div class="card"><h3>📷 Câmeras</h3><p>Pasta preparada para vídeos e imagens.</p><strong>~/Servidor/Cameras</strong></div>
-      <div class="card"><h3>📁 Arquivos</h3><p>Base para explorador de arquivos.</p><strong>Em breve</strong></div>
-      <div class="card"><h3>💾 Backup</h3><p>Área para cópias automáticas.</p><strong>~/Servidor/Backups</strong></div>
-      <div class="card"><h3>📊 Sistema</h3><p>Nginx ativo na porta 8080.</p><strong>v2.0</strong></div>
-    </section>
-
-    <section class="panel">
-      <h3>Status rápido</h3>
-      <div class="row"><span>Servidor Web</span><b class="ok">Ativo</b></div>
-      <div class="row"><span>Porta</span><b>8080</b></div>
-      <div class="row"><span>Pasta Web</span><b>~/Servidor/Web</b></div>
-      <div class="row"><span>Próxima etapa</span><b>Câmeras Yoosee</b></div>
-    </section>
-  </main>
-
-  <script src="js/app.js"></script>
+<section id="files" class="page"><section class="panel"><h3>📁 Arquivos</h3><input type="file" id="upload-files"><button onclick="uploadFile('files','upload-files')">Enviar</button><div id="file-list" class="file-list"></div></section></section>
+<section id="cameras" class="page"><section class="panel"><h3>📷 Câmeras</h3><input type="file" id="upload-cameras"><button onclick="uploadFile('cameras','upload-cameras')">Enviar</button><div id="camera-list" class="file-list"></div></section></section>
+<section id="backups" class="page"><section class="panel"><h3>💾 Backups</h3><div id="backup-list" class="file-list"></div></section></section>
+<section id="status" class="page"><section class="panel"><h3>📊 Status bruto</h3><pre id="raw-status">...</pre></section></section>
+</main>
+<script src="js/app.js"></script>
 </body>
 </html>
