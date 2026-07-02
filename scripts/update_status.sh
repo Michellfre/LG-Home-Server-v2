@@ -2,7 +2,11 @@
 
 BASE="$HOME/Servidor"
 WEB="$BASE/Web"
-mkdir -p "$WEB" "$BASE/Cameras" "$BASE/Backups" "$BASE/Logs"
+
+mkdir -p "$WEB"
+mkdir -p "$BASE/Cameras"
+mkdir -p "$BASE/Backups"
+mkdir -p "$BASE/Logs"
 
 IP=$(ip addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n1)
 [ -z "$IP" ] && IP="não encontrado"
