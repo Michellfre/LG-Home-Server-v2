@@ -1,16 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-echo "===================================="
-echo " Atualizando LG Home Server"
-echo "===================================="
-
+echo "Atualizando LG Home Server..."
 git pull
 bash install.sh
-
-if pgrep nginx >/dev/null; then
-  nginx -s reload
-else
-  nginx
-fi
-
+nginx -s reload
+bash scripts/start_api.sh
 echo "Atualização concluída."

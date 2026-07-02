@@ -1,42 +1,38 @@
-# LG Home Server v3.2
+# LG Home Server v4
 
-Servidor doméstico para Android usando Termux + Nginx.
+Servidor doméstico para Android usando Termux + Nginx + Python.
 
-## Esta versão corrige
+## Novidades da v4
 
-- Pasta `scripts` ausente
-- Atualização de status
-- Instalação incompleta
-- Estrutura do projeto
-
-## Recursos
-
-- Dashboard web
-- Status em JSON
-- IP local
-- Status do Nginx
-- Espaço livre
-- Contagem de arquivos de câmeras
-- Contagem de backups
-- Logs
-- Scripts de backup, limpeza e preparação de câmeras
+- Dashboard melhorado
+- API local em Python
+- Gerenciador de arquivos básico
+- Listagem de pastas pelo navegador
+- Status do sistema via API
+- Estrutura preparada para câmeras Yoosee/RTSP
+- Scripts de instalação, atualização, backup e diagnóstico
 
 ## Instalação
 
-```bash
-bash install.sh
-nginx -s reload
-```
-
-## Atualização
+No Termux:
 
 ```bash
 git pull
-bash update.sh
+bash install.sh
+nginx -s reload
+bash scripts/start_api.sh
 ```
 
-## Atualizar status manualmente
+Acesse:
 
-```bash
-bash scripts/update_status.sh
+```text
+http://IP_DO_CELULAR:8080
+```
+
+## API
+
+A API roda na porta:
+
+```text
+http://IP_DO_CELULAR:8090
 ```
