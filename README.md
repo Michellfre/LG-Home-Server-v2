@@ -1,3 +1,3 @@
-# LG Home Server v8 Câmeras
+# LG Home Server v8.1 Pro
 
-Assistente prático para cadastrar câmeras Yoosee/RTSP/ONVIF.
+Adiciona drag and drop, ordenação, timeline, configurações de retenção e limpeza de gravações antigas.
