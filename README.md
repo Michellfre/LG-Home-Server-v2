@@ -1,3 +1,3 @@
-# LG Home Server v6
+# LG Home Server v7 Ultimate
 
-Preview de mídia, renomear, excluir para lixeira e backup manual.
+Explorador com busca, preview, lixeira, restauração e backup ZIP.
