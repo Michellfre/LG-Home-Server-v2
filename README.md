@@ -1,3 +1,3 @@
-# LG Home Server v7 Ultimate
+# LG Home Server v8 Câmeras
 
-Explorador com busca, preview, lixeira, restauração e backup ZIP.
+Assistente prático para cadastrar câmeras Yoosee/RTSP/ONVIF.
