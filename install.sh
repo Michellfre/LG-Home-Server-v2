@@ -1,6 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
+
 echo "===================================="
-echo " LG Home Server v3.1 - Instalação"
+echo " LG Home Server v3.2 - Instalação"
 echo "===================================="
 
 BASE="$HOME/Servidor"
@@ -16,7 +17,11 @@ cp -rf public/css "$WEB/"
 cp -rf public/js "$WEB/"
 cp -rf public/img "$WEB/" 2>/dev/null
 
-bash scripts/update_status.sh
+if [ -f scripts/update_status.sh ]; then
+  bash scripts/update_status.sh
+else
+  echo "Aviso: scripts/update_status.sh não encontrado."
+fi
 
 echo ""
 echo "Instalação concluída."
