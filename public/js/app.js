@@ -17,7 +17,7 @@ async function loadStatus(){
  try{
   let r=await fetch(apiBase()+"/api/status?"+Date.now());
   let d=await r.json();
-  ["ip","nginx","api","disk","used","camera_files","updated"].forEach(id=>{let e=document.getElementById(id); if(e)e.textContent=d[id]||"..."});
+  ["ip","nginx","api","disk","used","camera_files","updated","python"].forEach(id=>{let e=document.getElementById(id); if(e)e.textContent=d[id]||"..."});
   let fc=document.getElementById("files_count"); if(fc) fc.textContent=d.files||"0";
   let raw=document.getElementById("raw-status"); if(raw) raw.textContent=JSON.stringify(d,null,2);
  }catch(e){console.log(e)}

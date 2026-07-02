@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 echo "===================================="
-echo " LG Home Server v5 - Instalação"
+echo " LG Home Server v5.1 - Instalação"
 echo "===================================="
 
 BASE="$HOME/Servidor"
@@ -19,5 +19,3 @@ echo "Instalação concluída."
 echo "Rode:"
 echo "nginx -s reload"
 echo "bash scripts/start_api.sh"
-echo ""
-echo "Acesse: http://IP_DO_CELULAR:8080"

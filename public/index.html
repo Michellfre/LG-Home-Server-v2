@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LG Home Server v5</title>
+<title>LG Home Server v5.1</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <aside class="sidebar">
-  <div class="brand"><div class="logo">LG</div><div><h1>Home Server</h1><p>K41S • v5</p></div></div>
+  <div class="brand"><div class="logo">LG</div><div><h1>Home Server</h1><p>K41S • v5.1</p></div></div>
   <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a>
   <a onclick="showPage('files')">📁 Arquivos</a>
   <a onclick="showPage('cameras')">📷 Câmeras</a>
@@ -27,7 +27,7 @@
   <div class="card"><h3>📁 Arquivos</h3><p><span id="files_count">...</span></p></div>
   <div class="card"><h3>📷 Câmeras</h3><p><span id="camera_files">...</span></p></div>
  </div>
- <section class="panel"><h3>Status</h3><div class="row"><span>Uso</span><b id="used">...</b></div><div class="row"><span>Atualizado</span><b id="updated">...</b></div></section>
+ <section class="panel"><h3>Status</h3><div class="row"><span>Uso</span><b id="used">...</b></div><div class="row"><span>Python</span><b id="python">...</b></div><div class="row"><span>Atualizado</span><b id="updated">...</b></div></section>
 </section>
 
 <section id="files" class="page"><section class="panel"><h3>📁 Arquivos</h3><input type="file" id="upload-files"><button onclick="uploadFile('files','upload-files')">Enviar</button><div id="file-list" class="file-list"></div></section></section>
