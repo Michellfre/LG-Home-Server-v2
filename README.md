@@ -1,3 +1,3 @@
-# Open Home Server v10.7 Jarvis + TV Mode
+# Open Home OS v12.0 Smart Home Core
 
-Jarvis por voz/texto, modo TV e câmeras só contam online quando RTSP + snapshot funcionarem.
+Dashboard inteligente, saúde da casa, sensores por ambiente, SD Card, eventos e Jarvis.
