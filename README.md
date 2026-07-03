@@ -1,3 +1,3 @@
-# Open Home OS v11.0 Core
+# Open Home OS v11.1 Tuya + SD
 
-Sistema operacional residencial modular para Android/Termux: Dashboard, Jarvis, NVR, NAS, TV Mode, Central IA, IoT e Backup.
+Sensores Tuya manuais e capacidade do SD Card no dashboard.
