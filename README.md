@@ -1,3 +1,3 @@
-# Open Home Server v10.1 Enterprise
+# Open Home Server v10.2 Enterprise LTS
 
-Assistente inicial, câmera em 3 cliques e base para o novo produto Open Home Server.
+Consolidação das versões v10.2 a v10.9: dashboard avançado, central de câmeras, ao vivo, explorer pro, biblioteca, backups, lixeira, configurações e base para V11.
