@@ -1,3 +1,3 @@
-# LG Home Server v9 Ultimate
+# Open Home Server v10.1 Enterprise
 
-NAS, explorer, biblioteca, central de câmeras, notificações e backup.
+Assistente inicial, câmera em 3 cliques e base para o novo produto Open Home Server.
