@@ -1,3 +1,3 @@
-# Open Home Server v10.5 Camera Assistant
+# Open Home Server v10.6 Smart NVR
 
-Assistente automático de câmeras: busca na rede, identificação de portas, sugestão RTSP, teste e adicionar em 1 clique.
+NVR inteligente: snapshots, verificação completa, relatório de qualidade, favoritos e descoberta avançada.

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import json, subprocess, time, uuid, zipfile, shutil, socket, ipaddress, mimetypes, re, os
+import json, subprocess, time, uuid, zipfile, shutil, socket, ipaddress, mimetypes, re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
 
-VERSION="v10.5 Camera Assistant"
+VERSION="v10.6 Smart NVR"
 HOME=Path.home()
 BASE=HOME/"Servidor"
 WEB=BASE/"Web"
@@ -12,7 +12,8 @@ CONFIG=BASE/"Config"
 AREAS={
  "files":BASE/"Files","shared":BASE/"Shared","documents":BASE/"Documents","downloads":BASE/"Downloads",
  "media":BASE/"Media","photos":BASE/"Photos","videos":BASE/"Videos","music":BASE/"Music",
- "cameras":BASE/"Cameras","backups":BASE/"Backups","trash":BASE/"Trash","logs":BASE/"Logs","snapshots":BASE/"Snapshots"
+ "cameras":BASE/"Cameras","backups":BASE/"Backups","trash":BASE/"Trash","logs":BASE/"Logs",
+ "snapshots":BASE/"Snapshots","streams":BASE/"Streams"
 }
 for p in list(AREAS.values())+[WEB,CONFIG]: p.mkdir(parents=True,exist_ok=True)
 
@@ -23,7 +24,13 @@ def ensure(p,d):
     if not p.exists(): p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding="utf-8")
 ensure(CAMERAS,[]); ensure(NOTES,[]); ensure(EVENTS,[]); ensure(CACHE,{"ts":0}); ensure(DISCOVERY,[])
 ensure(SETUP,{"done":False,"step":1})
-ensure(SETTINGS,{"project_name":"Open Home Server","device_name":"LG K41S","version":VERSION,"camera_retention_days":30,"auto_delete_when_disk_above":90,"battery_low_level":20,"temperature_alert":40,"backup_hour":"02:00","theme":"dark","notifications":True,"camera_user_presets":["admin","user"],"camera_password_presets":["","admin","12345","123456","888888"],"rtsp_timeout":5})
+ensure(SETTINGS,{
+ "project_name":"Open Home Server","device_name":"LG K41S","version":VERSION,
+ "camera_retention_days":30,"auto_delete_when_disk_above":90,"battery_low_level":20,
+ "temperature_alert":40,"backup_hour":"02:00","theme":"dark","notifications":True,
+ "camera_user_presets":["admin","user"],"camera_password_presets":["","admin","12345","123456","888888"],
+ "rtsp_timeout":5,"snapshot_timeout":12,"smart_discovery":True
+})
 
 NET_LAST={"time":time.time(),"rx":0,"tx":0}; CPU_LAST={"total":0,"idle":0}; ALERTS={}
 
@@ -40,18 +47,18 @@ def notify(t,m,l="info"):
     key=t+m+l; now=time.time()
     if ALERTS.get(key,0) and now-ALERTS[key]<300: return
     ALERTS[key]=now
-    arr=load(NOTES,[]); arr.insert(0,{"id":uuid.uuid4().hex[:8],"title":t,"message":m,"level":l,"time":time.strftime("%d/%m/%Y %H:%M:%S")}); save(NOTES,arr[:120])
+    arr=load(NOTES,[]); arr.insert(0,{"id":uuid.uuid4().hex[:8],"title":t,"message":m,"level":l,"time":time.strftime("%d/%m/%Y %H:%M:%S")}); save(NOTES,arr[:150])
 def event(k,msg="",l="info",cam=""):
-    arr=load(EVENTS,[]); arr.insert(0,{"id":uuid.uuid4().hex[:8],"kind":k,"camera":cam,"message":msg,"level":l,"date":time.strftime("%Y-%m-%d"),"time":time.strftime("%d/%m/%Y %H:%M:%S")}); save(EVENTS,arr[:700])
+    arr=load(EVENTS,[]); arr.insert(0,{"id":uuid.uuid4().hex[:8],"kind":k,"camera":cam,"message":msg,"level":l,"date":time.strftime("%Y-%m-%d"),"time":time.strftime("%d/%m/%Y %H:%M:%S")}); save(EVENTS,arr[:900])
 
 def media(p):
     e=p.suffix.lower()
     if e in [".jpg",".jpeg",".png",".gif",".webp",".bmp"]: return "image"
-    if e in [".mp4",".webm",".mov",".mkv",".avi",".m4v"]: return "video"
+    if e in [".mp4",".webm",".mov",".mkv",".avi",".m4v",".ts"]: return "video"
     if e in [".mp3",".wav",".ogg",".m4a",".flac"]: return "audio"
     if e==".pdf": return "pdf"
     if e in [".zip",".rar",".7z",".tar",".gz"]: return "archive"
-    if e in [".doc",".docx",".xls",".xlsx",".ppt",".pptx",".txt",".md"]: return "document"
+    if e in [".doc",".docx",".xls",".xlsx",".ppt",".pptx",".txt",".md",".m3u8"]: return "document"
     return "other"
 def items(a,q="",sort="name"):
     rows=[]; query=q.lower().strip()
@@ -132,11 +139,11 @@ def largest():
             if f.is_file():
                 try: rows.append({"area":n,"name":f.name,"size":f.stat().st_size,"modified":time.strftime("%d/%m/%Y %H:%M",time.localtime(f.stat().st_mtime))})
                 except Exception: pass
-    return sorted(rows,key=lambda x:x["size"],reverse=True)[:20]
+    return sorted(rows,key=lambda x:x["size"],reverse=True)[:30]
 
 def status():
     cams=load(CAMERAS,[]); s=sensors(); b=s["battery"]; w=s["wifi"]; cfg=load(SETTINGS,{})
-    st={"version":VERSION,"ip":ip(),"nginx":"Ativo" if run("pgrep nginx") else "Parado","api":"Ativa","disk":run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),"used":f"{disk_used()}%","cpu":cpu_pct(),"cpu_load":run("cat /proc/loadavg | awk '{print $1}'"),"mem":run("free -m | awk '/Mem:/ {print $3\" MB usado de \"$2\" MB\"}'") or "indisponível","uptime":run("uptime -p") or "indisponível","temperature":f"{s.get('temperature')}°C" if s.get("temperature") is not None else "indisponível","battery":f"{b.get('percentage')}% • {b.get('status','')}" if b.get("percentage") is not None else "indisponível","battery_detail":b,"wifi":w.get("ssid") or "indisponível","wifi_detail":w,"device":s.get("device",{}),"network":net(),"files":len([p for p in AREAS["files"].rglob("*") if p.is_file()]),"camera_files":len([p for p in AREAS["cameras"].rglob("*") if p.is_file()]),"backup_files":len([p for p in AREAS["backups"].rglob("*") if p.is_file()]),"trash_files":len([p for p in AREAS["trash"].rglob("*") if p.is_file()]),"cameras_total":len(cams),"cameras_online":len([c for c in cams if c.get("status")=="online"]),"cameras_recording":len([c for c in cams if c.get("recording") in ["always","motion","schedule"]]),"setup":load(SETUP,{}),"settings":cfg,"updated":run("date '+%d/%m/%Y %H:%M:%S'"),"python":run("python --version")}
+    st={"version":VERSION,"ip":ip(),"nginx":"Ativo" if run("pgrep nginx") else "Parado","api":"Ativa","disk":run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),"used":f"{disk_used()}%","cpu":cpu_pct(),"cpu_load":run("cat /proc/loadavg | awk '{print $1}'"),"mem":run("free -m | awk '/Mem:/ {print $3\" MB usado de \"$2\" MB\"}'") or "indisponível","uptime":run("uptime -p") or "indisponível","temperature":f"{s.get('temperature')}°C" if s.get("temperature") is not None else "indisponível","battery":f"{b.get('percentage')}% • {b.get('status','')}" if b.get("percentage") is not None else "indisponível","battery_detail":b,"wifi":w.get("ssid") or "indisponível","wifi_detail":w,"device":s.get("device",{}),"network":net(),"files":len([p for p in AREAS["files"].rglob("*") if p.is_file()]),"camera_files":len([p for p in AREAS["cameras"].rglob("*") if p.is_file()]),"backup_files":len([p for p in AREAS["backups"].rglob("*") if p.is_file()]),"trash_files":len([p for p in AREAS["trash"].rglob("*") if p.is_file()]),"snapshot_files":len([p for p in AREAS["snapshots"].rglob("*") if p.is_file()]),"cameras_total":len(cams),"cameras_online":len([c for c in cams if c.get("status")=="online"]),"cameras_recording":len([c for c in cams if c.get("recording") in ["always","motion","schedule"]]),"setup":load(SETUP,{}),"settings":cfg,"updated":run("date '+%d/%m/%Y %H:%M:%S'"),"python":run("python --version")}
     if disk_used()>=int(cfg.get("auto_delete_when_disk_above",90)): notify("Espaço baixo",f"Disco em {st['used']}.","warning")
     if b.get("percentage") is not None and int(b["percentage"])<=int(cfg.get("battery_low_level",20)): notify("Bateria baixa",f"Bateria em {b['percentage']}%.","warning"); event("battery_low",f"Bateria em {b['percentage']}%","warning")
     if s.get("temperature") is not None and float(s["temperature"])>=float(cfg.get("temperature_alert",40)): notify("Temperatura alta",f"{s['temperature']}°C","warning"); event("temperature_high",f"{s['temperature']}°C","warning")
@@ -161,34 +168,32 @@ def send_file(h,p,download=False):
     if download: h.send_header("Content-Disposition",f'attachment; filename="{p.name}"')
     h.send_header("Content-Length",str(len(data))); h.end_headers(); h.wfile.write(data)
 
-def test_port(host,port,timeout=.3):
+def test_port(host,port,timeout=.25):
     try:
         with socket.create_connection((host,port),timeout=timeout): return True
     except Exception: return False
 
-def device_fingerprint(ipaddr, ports):
-    if 8899 in ports: return {"kind":"Yoosee provável","brand":"Yoosee","score":85}
-    if 554 in ports or 8554 in ports: return {"kind":"RTSP/ONVIF provável","brand":"IP Camera","score":75}
-    if 8080 in ports or 8081 in ports: return {"kind":"Webcam/ESP32-CAM provável","brand":"IP Camera","score":65}
-    if 80 in ports: return {"kind":"Dispositivo web","brand":"Desconhecido","score":45}
-    return {"kind":"Dispositivo de rede","brand":"Desconhecido","score":30}
+def http_title(ipaddr, port):
+    if port not in [80,8080,8081,8000,5000,8888]: return ""
+    out=run(f'curl -m 2 -s http://{ipaddr}:{port}/ | head -c 800',timeout=3).lower()
+    if not out: return ""
+    if "yoosee" in out: return "Yoosee"
+    if "hikvision" in out: return "Hikvision"
+    if "dahua" in out: return "Dahua"
+    if "intelbras" in out: return "Intelbras"
+    if "esp32" in out or "camera web server" in out: return "ESP32-CAM"
+    if "ip camera" in out: return "IP Camera"
+    return "Web"
 
-def discover():
-    me=ip()
-    if me=="não encontrado": return []
-    res=[]; ports=[554,8554,80,8080,8081,8899,5000,8000,8888]
-    for h in ipaddress.ip_network(me+"/24",strict=False).hosts():
-        addr=str(h)
-        if addr==me: continue
-        op=[p for p in ports if test_port(addr,p)]
-        if op:
-            fp=device_fingerprint(addr,op)
-            sug=rtsp(addr)[:4]
-            res.append({"id":uuid.uuid4().hex[:8],"ip":addr,"ports":op,"type":fp["kind"],"brand":fp["brand"],"score":fp["score"],"suggested_name":f"Camera {len(res)+1}","rtsp_suggestions":sug})
-    save(DISCOVERY,res)
-    notify("Busca de câmeras",f"{len(res)} dispositivo(s) encontrado(s).")
-    event("camera_discovery",f"{len(res)} dispositivo(s) encontrado(s).","info")
-    return res
+def device_fingerprint(ipaddr, ports):
+    webbrands=[http_title(ipaddr,p) for p in ports if p in [80,8080,8081,8000,5000,8888]]
+    webbrands=[x for x in webbrands if x]
+    brand=webbrands[0] if webbrands else "Desconhecida"
+    if 8899 in ports: return {"kind":"Yoosee provável","brand":"Yoosee","score":88}
+    if 554 in ports or 8554 in ports: return {"kind":"RTSP/ONVIF provável","brand":brand if brand!="Web" else "IP Camera","score":78}
+    if 8080 in ports or 8081 in ports: return {"kind":"Webcam/ESP32-CAM provável","brand":brand if brand!="Web" else "IP Camera","score":68}
+    if 80 in ports: return {"kind":"Dispositivo web","brand":brand,"score":46}
+    return {"kind":"Dispositivo de rede","brand":"Desconhecida","score":30}
 
 def rtsp(ipaddr,user="",pwd=""):
     auth=f"{user}:{pwd}@" if user or pwd else ""
@@ -207,31 +212,72 @@ def rtsp(ipaddr,user="",pwd=""):
 def probe_url(url):
     if not url: return {"ok":False,"message":"URL vazia"}
     if url.startswith("rtsp://"):
-        ff=run(f"command -v ffprobe || command -v ffmpeg")
-        if not ff:
-            return {"ok":None,"message":"ffmpeg/ffprobe não instalado. URL gerada, mas teste avançado indisponível."}
-        out=run(f'ffprobe -v error -rtsp_transport tcp -i "{url}" -show_entries stream=codec_name,width,height -of json',timeout=8)
+        if not run("command -v ffprobe || command -v ffmpeg"):
+            return {"ok":None,"message":"ffmpeg/ffprobe não instalado. Use: pkg install ffmpeg"}
+        out=run(f'ffprobe -v error -rtsp_transport tcp -i "{url}" -show_entries stream=codec_name,width,height,r_frame_rate -of json',timeout=8)
         if out:
-            try: return {"ok":True,"message":"RTSP respondeu","info":json.loads(out)}
+            try:
+                info=json.loads(out); stream=(info.get("streams") or [{}])[0]
+                return {"ok":True,"message":"RTSP funcionando","codec":stream.get("codec_name"),"width":stream.get("width"),"height":stream.get("height"),"fps":stream.get("r_frame_rate"),"info":info}
             except Exception: return {"ok":True,"message":"RTSP respondeu","info":out[:500]}
         return {"ok":False,"message":"Não respondeu ao teste RTSP"}
-    # HTTP stream basic check
     m=re.match(r"https?://([^/:]+)(?::(\d+))?",url)
     if m:
-        return {"ok":test_port(m.group(1), int(m.group(2) or 80), .7), "message":"Porta HTTP acessível" if test_port(m.group(1), int(m.group(2) or 80), .7) else "Porta HTTP não acessível"}
+        host=m.group(1); port=int(m.group(2) or 80)
+        ok=test_port(host,port,.7)
+        return {"ok":ok,"message":"Porta HTTP acessível" if ok else "Porta HTTP não acessível"}
     return {"ok":False,"message":"Formato não reconhecido"}
 
-def snapshot(cam):
-    name=cam.get("name","camera").replace(" ","_")
-    target=AREAS["snapshots"]/f"{name}_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
-    rt=cam.get("rtsp","")
-    if not rt: return {"ok":False,"message":"Sem RTSP configurado"}
-    ff=run("command -v ffmpeg")
-    if not ff: return {"ok":False,"message":"ffmpeg não instalado. Use: pkg install ffmpeg"}
-    run(f'ffmpeg -y -rtsp_transport tcp -i "{rt}" -frames:v 1 "{target}"',timeout=12)
+def capture_snapshot_from_url(url, label="camera"):
+    target=AREAS["snapshots"]/f"{safe(label).replace(' ','_')}_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+    if not url: return {"ok":False,"message":"Sem URL"}
+    if not run("command -v ffmpeg"):
+        return {"ok":False,"message":"ffmpeg não instalado. Use: pkg install ffmpeg"}
+    if url.startswith("rtsp://"):
+        run(f'ffmpeg -y -rtsp_transport tcp -i "{url}" -frames:v 1 "{target}"',timeout=12)
+    else:
+        run(f'ffmpeg -y -i "{url}" -frames:v 1 "{target}"',timeout=10)
     if target.exists() and target.stat().st_size>0:
-        return {"ok":True,"file":target.name}
+        return {"ok":True,"file":target.name,"url":f"/api/view?area=snapshots&name={target.name}"}
     return {"ok":False,"message":"Não foi possível capturar snapshot"}
+
+def discover(auto_snapshot=False):
+    me=ip()
+    if me=="não encontrado": return []
+    res=[]; ports=[554,8554,80,8080,8081,8899,5000,8000,8888]
+    for h in ipaddress.ip_network(me+"/24",strict=False).hosts():
+        addr=str(h)
+        if addr==me: continue
+        op=[p for p in ports if test_port(addr,p)]
+        if op:
+            fp=device_fingerprint(addr,op)
+            sug=rtsp(addr)[:6]
+            item={"id":uuid.uuid4().hex[:8],"ip":addr,"ports":op,"type":fp["kind"],"brand":fp["brand"],"score":fp["score"],"suggested_name":f"Camera {len(res)+1}","rtsp_suggestions":sug,"snapshot":"","probe":{}}
+            if auto_snapshot and (554 in op or 8554 in op or 8080 in op or 8081 in op):
+                for u in sug[:3]:
+                    snap=capture_snapshot_from_url(u, f"discover_{addr}")
+                    if snap.get("ok"):
+                        item["snapshot"]=snap.get("file"); break
+            res.append(item)
+    save(DISCOVERY,res)
+    notify("Busca de câmeras",f"{len(res)} dispositivo(s) encontrado(s).")
+    event("camera_discovery",f"{len(res)} dispositivo(s) encontrado(s).","info")
+    return res
+
+def snapshot(cam):
+    return capture_snapshot_from_url(cam.get("rtsp",""), cam.get("name","camera"))
+
+def verify_camera(cam):
+    ipaddr=cam.get("ip","")
+    ports=[p for p in [554,8554,80,8080,8081,8899] if ipaddr and test_port(ipaddr,p)]
+    probe=probe_url(cam.get("rtsp",""))
+    snap=snapshot(cam) if probe.get("ok") else {"ok":False,"message":"Snapshot ignorado: RTSP não validado"}
+    report={"id":cam.get("id"),"name":cam.get("name"),"ip":ipaddr,"ports":ports,"online":bool(ports),"rtsp":probe,"snapshot":snap,"score":0}
+    report["score"] += 30 if report["online"] else 0
+    report["score"] += 40 if probe.get("ok") else 0
+    report["score"] += 20 if snap.get("ok") else 0
+    report["score"] += 10 if cam.get("user") or cam.get("password") else 0
+    return report
 
 def timeline():
     d={}
@@ -241,7 +287,7 @@ def timeline():
     return [{"date":k,"count":v,"blocks":min(24,max(1,v))} for k,v in sorted(d.items(),reverse=True)]
 def library():
     c={"image":0,"video":0,"audio":0,"pdf":0,"archive":0,"document":0,"other":0}
-    for a in ["files","documents","downloads","media","photos","videos","music","cameras","snapshots"]:
+    for a in ["files","documents","downloads","media","photos","videos","music","cameras","snapshots","streams"]:
         for p in area(a).rglob("*"):
             if p.is_file(): c[media(p)]=c.get(media(p),0)+1
     return c
@@ -269,11 +315,11 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/android": return self.j(sensors(True))
         if u.path=="/api/system/processes": return self.j({"text":run("ps 2>/dev/null | head -30")})
         if u.path=="/api/system/logs":
-            p=AREAS["logs"]/ "api.log"; return self.j({"text":"\n".join(p.read_text(errors="ignore").splitlines()[-100:]) if p.exists() else ""})
+            p=AREAS["logs"]/ "api.log"; return self.j({"text":"\n".join(p.read_text(errors="ignore").splitlines()[-120:]) if p.exists() else ""})
         if u.path=="/api/system/folders": return self.j({"items":folder_usage()})
         if u.path=="/api/system/largest": return self.j({"items":largest()})
         if u.path=="/api/system/permissions":
-            s=sensors(True); return self.j({"termux_api":bool(run("command -v termux-battery-status")),"battery":s.get("battery"),"wifi":s.get("wifi"),"device":s.get("device"),"hint":"Termux:API funcionando." if s.get("battery",{}).get("available") else "Instale/abra Termux:API e dê permissões."})
+            s=sensors(True); return self.j({"termux_api":bool(run("command -v termux-battery-status")),"ffmpeg":bool(run("command -v ffmpeg")),"ffprobe":bool(run("command -v ffprobe")),"battery":s.get("battery"),"wifi":s.get("wifi"),"device":s.get("device"),"hint":"Termux:API funcionando." if s.get("battery",{}).get("available") else "Instale/abra Termux:API e dê permissões."})
         if u.path=="/api/setup": return self.j(load(SETUP,{}))
         if u.path=="/api/settings": return self.j(load(SETTINGS,{}))
         if u.path=="/api/library": return self.j(library())
@@ -281,7 +327,7 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/events": return self.j({"items":load(EVENTS,[])})
         if u.path=="/api/notifications": return self.j({"items":load(NOTES,[])})
         if u.path=="/api/cameras": return self.j({"items":load(CAMERAS,[])})
-        if u.path=="/api/camera/discover": return self.j({"items":discover()})
+        if u.path=="/api/camera/discover": return self.j({"items":discover(q.get("snapshots",["0"])[0]=="1")})
         if u.path=="/api/camera/discovery": return self.j({"items":load(DISCOVERY,[])})
         if u.path=="/api/camera/suggest": return self.j({"items":rtsp(q.get("ip",[""])[0],q.get("user",[""])[0],q.get("password",[""])[0])})
         if u.path=="/api/camera/probe": return self.j(probe_url(q.get("url",[""])[0]))
@@ -321,30 +367,49 @@ class H(BaseHTTPRequestHandler):
             clean="_".join(n.split("_")[1:]) if "_" in n else n; src.rename(AREAS["files"]/clean); return self.j({"ok":True})
         if u.path=="/api/camera/add":
             d=self.body(); cams=load(CAMERAS,[]); name=d.get("name") or f"Camera {len(cams)+1}"; ipaddr=d.get("ip","")
-            cam={"id":uuid.uuid4().hex[:8],"name":name,"type":d.get("type","rtsp"),"brand":d.get("brand","IP Camera"),"ip":ipaddr,"user":d.get("user",""),"password":d.get("password",""),"rtsp":d.get("rtsp",""),"quality":d.get("quality","media"),"recording":d.get("recording","manual"),"location":d.get("location",""),"status":"online" if ipaddr and any(test_port(ipaddr,p) for p in [554,8554,80,8080,8899]) else "cadastrada","snapshot":""}
+            cam={"id":uuid.uuid4().hex[:8],"name":name,"type":d.get("type","rtsp"),"brand":d.get("brand","IP Camera"),"ip":ipaddr,"user":d.get("user",""),"password":d.get("password",""),"rtsp":d.get("rtsp",""),"quality":d.get("quality","media"),"recording":d.get("recording","manual"),"location":d.get("location",""),"favorite":bool(d.get("favorite",False)),"status":"online" if ipaddr and any(test_port(ipaddr,p) for p in [554,8554,80,8080,8899]) else "cadastrada","snapshot":""}
             cams.append(cam); save(CAMERAS,cams); notify("Câmera adicionada",name,"success"); event("camera_added","Câmera cadastrada.","success",name); return self.j({"ok":True,"camera":cam})
         if u.path=="/api/camera/quickadd":
-            d=self.body()
-            ipaddr=d.get("ip",""); name=d.get("name") or d.get("suggested_name") or f"Camera {ipaddr}"
-            user=d.get("user",""); pwd=d.get("password","")
-            suggestions=rtsp(ipaddr,user,pwd)
-            chosen=d.get("rtsp") or suggestions[0]
-            probe=probe_url(chosen)
+            d=self.body(); ipaddr=d.get("ip",""); name=d.get("name") or d.get("suggested_name") or f"Camera {ipaddr}"
+            user=d.get("user",""); pwd=d.get("password",""); suggestions=rtsp(ipaddr,user,pwd); chosen=d.get("rtsp") or suggestions[0]
+            probe=probe_url(chosen); snap=capture_snapshot_from_url(chosen, name) if probe.get("ok") else {"ok":False}
             cams=load(CAMERAS,[])
-            cam={"id":uuid.uuid4().hex[:8],"name":name,"type":d.get("type","auto"),"brand":d.get("brand","IP Camera"),"ip":ipaddr,"user":user,"password":pwd,"rtsp":chosen,"quality":d.get("quality","media"),"recording":"manual","location":d.get("location",""),"status":"online" if ipaddr and any(test_port(ipaddr,p) for p in [554,8554,80,8080,8899]) else "cadastrada","probe":probe,"snapshot":""}
+            cam={"id":uuid.uuid4().hex[:8],"name":name,"type":d.get("type","auto"),"brand":d.get("brand","IP Camera"),"ip":ipaddr,"user":user,"password":pwd,"rtsp":chosen,"quality":d.get("quality","media"),"recording":"manual","location":d.get("location",""),"favorite":bool(d.get("favorite",False)),"status":"online" if ipaddr and any(test_port(ipaddr,p) for p in [554,8554,80,8080,8899]) else "cadastrada","probe":probe,"snapshot":snap.get("file","")}
             cams.append(cam); save(CAMERAS,cams); notify("Câmera rápida adicionada",name,"success"); event("camera_quickadd",f"{name} em {ipaddr}","success",name)
-            return self.j({"ok":True,"camera":cam,"probe":probe})
+            return self.j({"ok":True,"camera":cam,"probe":probe,"snapshot":snap})
         if u.path=="/api/camera/check":
             cams=load(CAMERAS,[])
             for c in cams:
                 ipaddr=c.get("ip"); c["status"]="online" if ipaddr and any(test_port(ipaddr,p) for p in [554,8554,80,8080,8899]) else "offline"
             save(CAMERAS,cams); return self.j({"ok":True,"items":cams})
+        if u.path=="/api/camera/verify":
+            d=self.body(); cams=load(CAMERAS,[])
+            reports=[]
+            ids=d.get("ids") or [c.get("id") for c in cams]
+            for c in cams:
+                if c.get("id") in ids:
+                    r=verify_camera(c); reports.append(r)
+                    if r.get("snapshot",{}).get("ok"): c["snapshot"]=r["snapshot"]["file"]
+                    c["last_report"]=r
+                    c["status"]="online" if r.get("online") else "offline"
+            save(CAMERAS,cams); event("camera_verify",f"{len(reports)} câmera(s) verificadas.","info")
+            return self.j({"ok":True,"reports":reports})
         if u.path=="/api/camera/snapshot":
             cid=self.body().get("id"); cam=next((c for c in load(CAMERAS,[]) if c.get("id")==cid),None)
             if not cam: return self.j({"ok":False,"message":"Câmera não encontrada"},404)
             r=snapshot(cam)
-            if r.get("ok"): notify("Snapshot salvo",r.get("file",""),"success"); event("snapshot",r.get("file",""),"success",cam.get("name",""))
+            if r.get("ok"):
+                cams=load(CAMERAS,[])
+                for c in cams:
+                    if c.get("id")==cid: c["snapshot"]=r.get("file","")
+                save(CAMERAS,cams)
+                notify("Snapshot salvo",r.get("file",""),"success"); event("snapshot",r.get("file",""),"success",cam.get("name",""))
             return self.j(r)
+        if u.path=="/api/camera/favorite":
+            d=self.body(); cams=load(CAMERAS,[])
+            for c in cams:
+                if c.get("id")==d.get("id"): c["favorite"]=not bool(c.get("favorite",False))
+            save(CAMERAS,cams); return self.j({"ok":True,"items":cams})
         if u.path=="/api/camera/delete": cid=self.body().get("id"); save(CAMERAS,[c for c in load(CAMERAS,[]) if c.get("id")!=cid]); return self.j({"ok":True})
         if u.path=="/api/notifications/clear": save(NOTES,[]); return self.j({"ok":True})
         if u.path=="/api/trash/empty":
