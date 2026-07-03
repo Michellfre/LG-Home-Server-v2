@@ -1,3 +1,3 @@
-# Open Home Server v10.4 Android Sensor Edition
+# Open Home Server v10.5 Camera Assistant
 
-Integração com Termux:API: bateria, temperatura, Wi-Fi, alertas, notificações e saúde do servidor.
+Assistente automático de câmeras: busca na rede, identificação de portas, sugestão RTSP, teste e adicionar em 1 clique.
