@@ -1,3 +1,3 @@
-# Open Home Server v10.6 Smart NVR
+# Open Home Server v10.7 Jarvis + TV Mode
 
-NVR inteligente: snapshots, verificação completa, relatório de qualidade, favoritos e descoberta avançada.
+Jarvis por voz/texto, modo TV e câmeras só contam online quando RTSP + snapshot funcionarem.
