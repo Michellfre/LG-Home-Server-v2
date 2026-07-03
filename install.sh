@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-echo "Open Home Server v10.2 Enterprise LTS - Instalando..."
+echo "Open Home Server v10.3 Professional - Instalando..."
 BASE="$HOME/Servidor"; WEB="$BASE/Web"
 mkdir -p "$WEB" "$BASE/Cameras" "$BASE/Backups" "$BASE/Logs" "$BASE/Files" "$BASE/Shared" "$BASE/Trash" "$BASE/Config" "$BASE/Media" "$BASE/Photos" "$BASE/Videos" "$BASE/Music" "$BASE/Downloads" "$BASE/Documents"
 [ -f "$BASE/Config/cameras.json" ] || echo "[]" > "$BASE/Config/cameras.json"
@@ -10,6 +10,6 @@ mkdir -p "$WEB" "$BASE/Cameras" "$BASE/Backups" "$BASE/Logs" "$BASE/Files" "$BAS
 [ -f "$BASE/Config/settings.json" ] || echo '{"project_name":"Open Home Server","device_name":"Android Server","storage_path":"~/Servidor","camera_retention_days":30,"auto_delete_when_disk_above":90,"backup_hour":"02:00","theme":"dark","notifications":true}' > "$BASE/Config/settings.json"
 cp -f public/index.html "$WEB/index.html"; cp -rf public/css "$WEB/"; cp -rf public/js "$WEB/"
 bash scripts/update_status.sh
-echo "Instalação concluída. Rode:"
-echo "nginx -s reload"
-echo "bash scripts/start_api.sh"
+echo "Instalação concluída."
+echo "Rode: nginx -s reload && bash scripts/start_api.sh"
+echo "Opcional para sensores Android: pkg install termux-api"

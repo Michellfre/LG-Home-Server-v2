@@ -1,3 +1,3 @@
-# Open Home Server v10.2 Enterprise LTS
+# Open Home Server v10.3 Professional
 
-Consolidação das versões v10.2 a v10.9: dashboard avançado, central de câmeras, ao vivo, explorer pro, biblioteca, backups, lixeira, configurações e base para V11.
+Monitoramento melhorado, permissões Android, rede em tempo real, Explorer com seleção múltipla, copiar/recortar/colar, progresso de upload, processos e logs.

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-import json, subprocess, uuid, time, zipfile, socket, ipaddress, os, shutil, mimetypes
+import json, subprocess, uuid, time, zipfile, socket, ipaddress, os, shutil, mimetypes, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
 
+VERSION = "v10.3 Professional"
 HOME = Path.home()
 BASE = HOME / "Servidor"
 WEB = BASE / "Web"
@@ -33,6 +34,7 @@ SETUP = CONFIG / "setup.json"
 NOTES = CONFIG / "notifications.json"
 EVENTS = CONFIG / "events.json"
 USERS = CONFIG / "users.json"
+CLIPBOARD = CONFIG / "clipboard.json"
 
 def ensure(path, data):
     if not path.exists():
@@ -41,19 +43,19 @@ def ensure(path, data):
 ensure(CAMERAS, [])
 ensure(NOTES, [])
 ensure(EVENTS, [])
+ensure(CLIPBOARD, {"mode": "", "items": []})
 ensure(USERS, [{"user": "admin", "role": "Administrador", "enabled": True}])
 ensure(SETUP, {"done": False, "step": 1})
 ensure(SETTINGS, {
     "project_name": "Open Home Server",
     "device_name": "Android Server",
+    "version": VERSION,
     "storage_path": str(BASE),
     "camera_retention_days": 30,
     "auto_delete_when_disk_above": 90,
     "backup_hour": "02:00",
     "backup_daily": True,
     "backup_weekly": False,
-    "backup_google_drive": False,
-    "backup_usb": False,
     "theme": "dark",
     "notifications": True,
     "web_port": 8080,
@@ -62,6 +64,9 @@ ensure(SETTINGS, {
     "motion_detection": False,
     "library_auto_sort": True
 })
+
+NET_LAST = {"time": time.time(), "rx": 0, "tx": 0}
+CPU_LAST = {"total": 0, "idle": 0}
 
 def run(cmd):
     try:
@@ -137,7 +142,6 @@ def list_items(area, query="", sort="name"):
             })
         except Exception:
             pass
-
     if sort == "date":
         rows.sort(key=lambda x: x["modified_ts"], reverse=True)
     elif sort == "size":
@@ -151,45 +155,82 @@ def local_ip():
 
 def disk_used_int():
     val = run(f"df {HOME} | awk 'NR==2 {{print $5}}'").replace("%", "")
-    try:
-        return int(val)
-    except Exception:
-        return 0
+    try: return int(val)
+    except Exception: return 0
 
-def get_cpu():
-    loadavg = run("cat /proc/loadavg 2>/dev/null | awk '{print $1}'")
-    return loadavg or "indisponível"
+def read_proc_stat():
+    try:
+        parts = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
+        nums = [int(x) for x in parts]
+        idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+        total = sum(nums)
+        return total, idle
+    except Exception:
+        return 0, 0
+
+def get_cpu_percent():
+    global CPU_LAST
+    total, idle = read_proc_stat()
+    if not total:
+        return "indisponível"
+    if CPU_LAST["total"] == 0:
+        CPU_LAST = {"total": total, "idle": idle}
+        return "calculando..."
+    dt = total - CPU_LAST["total"]
+    di = idle - CPU_LAST["idle"]
+    CPU_LAST = {"total": total, "idle": idle}
+    if dt <= 0:
+        return "0%"
+    return f"{max(0, min(100, int((1 - di / dt) * 100)))}%"
+
+def get_cpu_load():
+    return run("cat /proc/loadavg 2>/dev/null | awk '{print $1}'") or "indisponível"
 
 def get_temp():
-    for p in ["/sys/class/thermal/thermal_zone0/temp", "/sys/class/power_supply/battery/temp"]:
+    candidates = []
+    for base in ["/sys/class/thermal", "/sys/devices/virtual/thermal"]:
+        b = Path(base)
+        if b.exists():
+            candidates += list(b.glob("thermal_zone*/temp"))
+    candidates += [Path("/sys/class/power_supply/battery/temp")]
+    for p in candidates:
         try:
-            val = Path(p).read_text().strip()
-            if val:
-                n = int(val)
-                if n > 1000:
-                    return f"{n/1000:.1f}°C"
-                return f"{n/10:.1f}°C"
+            val = p.read_text().strip()
+            if not val:
+                continue
+            n = int(val)
+            if n > 1000:
+                temp = n / 1000
+            elif n > 100:
+                temp = n / 10
+            else:
+                temp = n
+            if 10 <= temp <= 95:
+                return f"{temp:.1f}°C"
         except Exception:
             pass
-    return "indisponível"
+    return "permissão necessária"
 
 def get_battery():
     base = Path("/sys/class/power_supply/battery")
     try:
         cap = (base / "capacity").read_text().strip()
-        status = (base / "status").read_text().strip()
-        return f"{cap}% • {status}"
+        status = (base / "status").read_text().strip() if (base / "status").exists() else ""
+        return f"{cap}% {status}".strip()
     except Exception:
-        return "indisponível"
+        return "permissão necessária"
 
 def get_wifi():
     ssid = run("termux-wifi-connectioninfo 2>/dev/null | grep -o '\"ssid\": *\"[^\"]*\"' | head -1 | cut -d '\"' -f4")
     if ssid:
         return ssid
-    return run("ip route 2>/dev/null | awk '/default/ {print $5; exit}'") or "indisponível"
+    iface = run("ip route 2>/dev/null | awk '/default/ {print $5; exit}'")
+    if iface:
+        return f"{iface} (Termux:API opcional)"
+    return "permissão necessária"
 
-def get_net():
-    rx = run("cat /proc/net/dev 2>/dev/null | awk '/wlan|eth/ {rx+=$2; tx+=$10} END {print rx\",\"tx}'")
+def raw_net():
+    rx = run("cat /proc/net/dev 2>/dev/null | awk '/wlan|eth|rmnet/ {rx+=$2; tx+=$10} END {print rx\",\"tx}'")
     if not rx:
         return {"rx": 0, "tx": 0}
     try:
@@ -198,21 +239,48 @@ def get_net():
     except Exception:
         return {"rx": 0, "tx": 0}
 
+def get_net_speed():
+    global NET_LAST
+    now = time.time()
+    cur = raw_net()
+    elapsed = max(1, now - NET_LAST["time"])
+    rxps = max(0, int((cur["rx"] - NET_LAST["rx"]) / elapsed))
+    txps = max(0, int((cur["tx"] - NET_LAST["tx"]) / elapsed))
+    NET_LAST = {"time": now, "rx": cur["rx"], "tx": cur["tx"]}
+    return {"rx": cur["rx"], "tx": cur["tx"], "download_s": rxps, "upload_s": txps}
+
+def process_list():
+    out = run("ps -eo pid,comm,%cpu,%mem 2>/dev/null | head -20")
+    if not out:
+        out = run("ps 2>/dev/null | head -20")
+    return out
+
+def log_tail():
+    p = AREAS["logs"] / "api.log"
+    if not p.exists():
+        return ""
+    try:
+        return "\n".join(p.read_text(errors="ignore").splitlines()[-80:])
+    except Exception:
+        return ""
+
 def status():
     cams = load(CAMERAS, [])
     st = {
+        "version": VERSION,
         "ip": local_ip(),
         "nginx": "Ativo" if run("pgrep nginx") else "Parado",
         "api": "Ativa",
         "disk": run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),
         "used": f"{disk_used_int()}%",
-        "cpu": get_cpu(),
+        "cpu": get_cpu_percent(),
+        "cpu_load": get_cpu_load(),
         "mem": run("free -m 2>/dev/null | awk '/Mem:/ {print $3\" MB usado de \"$2\" MB\"}'") or "indisponível",
         "uptime": run("uptime -p 2>/dev/null") or "indisponível",
         "temperature": get_temp(),
         "battery": get_battery(),
         "wifi": get_wifi(),
-        "network": get_net(),
+        "network": get_net_speed(),
         "files": len([p for p in AREAS["files"].rglob("*") if p.is_file()]),
         "camera_files": len([p for p in AREAS["cameras"].rglob("*") if p.is_file()]),
         "backup_files": len([p for p in AREAS["backups"].rglob("*") if p.is_file()]),
@@ -313,11 +381,7 @@ def timeline():
         if p.is_file():
             day = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
             counts[day] = counts.get(day, 0) + 1
-    out = []
-    for day, count in sorted(counts.items(), reverse=True):
-        blocks = min(24, max(1, count))
-        out.append({"date": day, "count": count, "blocks": blocks})
-    return out
+    return [{"date": day, "count": count, "blocks": min(24, max(1, count))} for day, count in sorted(counts.items(), reverse=True)]
 
 def library_stats():
     counts = {"image":0, "video":0, "audio":0, "pdf":0, "archive":0, "document":0, "other":0}
@@ -333,8 +397,7 @@ def cleanup_old(days):
     removed = 0
     for p in AREAS["cameras"].rglob("*"):
         if p.is_file() and p.stat().st_mtime < limit:
-            target = AREAS["trash"] / f"{uuid.uuid4().hex}_{p.name}"
-            p.rename(target)
+            p.rename(AREAS["trash"] / f"{uuid.uuid4().hex}_{p.name}")
             removed += 1
     if removed:
         notify("Limpeza concluída", f"{removed} gravação(ões) movidas para a lixeira.", "warning")
@@ -367,18 +430,18 @@ class H(BaseHTTPRequestHandler):
 
     def body_json(self):
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode("utf-8", "ignore")
-        try:
-            return json.loads(raw)
-        except Exception:
-            return {}
+        try: return json.loads(raw)
+        except Exception: return {}
 
     def do_OPTIONS(self): self.json({"ok": True})
 
     def do_GET(self):
-        u = urlparse(self.path)
-        q = parse_qs(u.query)
-
+        u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/api/status": return self.json(status())
+        if u.path == "/api/system/processes": return self.json({"text": process_list()})
+        if u.path == "/api/system/logs": return self.json({"text": log_tail()})
+        if u.path == "/api/system/permissions":
+            return self.json({"termux_api": bool(run("command -v termux-wifi-connectioninfo")), "battery": get_battery(), "temperature": get_temp(), "hint": "Instale Termux:API e app Termux:API para melhorar bateria, Wi-Fi e sensores."})
         if u.path == "/api/setup": return self.json(load(SETUP, {}))
         if u.path == "/api/settings": return self.json(load(SETTINGS, {}))
         if u.path == "/api/library": return self.json(library_stats())
@@ -400,20 +463,13 @@ class H(BaseHTTPRequestHandler):
         return self.json({"error": "rota não encontrada"}, 404)
 
     def do_POST(self):
-        u = urlparse(self.path)
-        q = parse_qs(u.query)
-
+        u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/api/setup":
-            data = self.body_json()
-            setup = load(SETUP, {})
-            setup.update(data)
-            save(SETUP, setup)
+            data = self.body_json(); setup = load(SETUP, {}); setup.update(data); save(SETUP, setup)
             cfg = load(SETTINGS, {})
             for k in ["device_name", "storage_path", "camera_retention_days", "auto_delete_when_disk_above", "backup_hour"]:
-                if k in data:
-                    cfg[k] = data[k]
-            save(SETTINGS, cfg)
-            notify("Assistente", "Configuração salva.", "success")
+                if k in data: cfg[k] = data[k]
+            save(SETTINGS, cfg); notify("Assistente", "Configuração salva.", "success")
             return self.json({"ok": True})
         if u.path == "/api/setup/finish":
             save(SETUP, {"done": True, "step": 99, "finished": time.strftime("%d/%m/%Y %H:%M:%S")})
@@ -424,158 +480,87 @@ class H(BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             fn, content = parse_upload(self.headers.get("Content-Type", ""), body)
             if not fn:
-                fn = f"upload_{uuid.uuid4().hex}.bin"
-                content = body
+                fn = f"upload_{uuid.uuid4().hex}.bin"; content = body
             (area_dir(a) / safe(fn)).write_bytes(content)
             return self.json({"ok": True, "file": safe(fn)})
         if u.path == "/api/mkdir":
-            data = self.body_json()
-            (area_dir(data.get("area", "files")) / safe(data.get("name", "Nova pasta"))).mkdir(exist_ok=True)
+            data = self.body_json(); (area_dir(data.get("area", "files")) / safe(data.get("name", "Nova pasta"))).mkdir(exist_ok=True)
             return self.json({"ok": True})
         if u.path == "/api/rename":
-            a = q.get("area", ["files"])[0]
-            old = safe(unquote(q.get("old", [""])[0]))
-            new = safe(unquote(q.get("new", [""])[0]))
-            src = area_dir(a) / old
-            dst = area_dir(a) / new
-            if not src.exists() or dst.exists():
-                return self.json({"error": "erro ao renomear"}, 400)
-            src.rename(dst)
-            return self.json({"ok": True})
+            a = q.get("area", ["files"])[0]; old = safe(unquote(q.get("old", [""])[0])); new = safe(unquote(q.get("new", [""])[0]))
+            src = area_dir(a) / old; dst = area_dir(a) / new
+            if not src.exists() or dst.exists(): return self.json({"error": "erro ao renomear"}, 400)
+            src.rename(dst); return self.json({"ok": True})
         if u.path == "/api/move":
-            data = self.body_json()
-            src = area_dir(data.get("from", "files")) / safe(data.get("name", ""))
-            dst = area_dir(data.get("to", "files")) / safe(data.get("name", ""))
-            if not src.exists():
-                return self.json({"error": "arquivo não encontrado"}, 404)
-            shutil.move(str(src), str(dst))
-            return self.json({"ok": True})
+            data = self.body_json(); src = area_dir(data.get("from", "files")) / safe(data.get("name", "")); dst = area_dir(data.get("to", "files")) / safe(data.get("name", ""))
+            if not src.exists(): return self.json({"error": "arquivo não encontrado"}, 404)
+            shutil.move(str(src), str(dst)); return self.json({"ok": True})
         if u.path == "/api/copy":
-            data = self.body_json()
-            src = area_dir(data.get("from", "files")) / safe(data.get("name", ""))
-            dst = area_dir(data.get("to", "files")) / safe(data.get("name", ""))
-            if not src.exists() or not src.is_file():
-                return self.json({"error": "arquivo não encontrado"}, 404)
-            shutil.copy2(src, dst)
-            return self.json({"ok": True})
+            data = self.body_json(); src = area_dir(data.get("from", "files")) / safe(data.get("name", "")); dst = area_dir(data.get("to", "files")) / safe(data.get("name", ""))
+            if not src.exists() or not src.is_file(): return self.json({"error": "arquivo não encontrado"}, 404)
+            shutil.copy2(src, dst); return self.json({"ok": True})
+        if u.path == "/api/clipboard":
+            data = self.body_json(); save(CLIPBOARD, data); return self.json({"ok": True})
+        if u.path == "/api/clipboard/paste":
+            data = self.body_json(); clip = load(CLIPBOARD, {"mode":"","items":[]}); target_area = data.get("to", "files"); done = 0
+            for item in clip.get("items", []):
+                src = area_dir(item.get("area", "files")) / safe(item.get("name", ""))
+                dst = area_dir(target_area) / safe(item.get("name", ""))
+                if src.exists():
+                    if clip.get("mode") == "cut":
+                        shutil.move(str(src), str(dst))
+                    else:
+                        if src.is_file(): shutil.copy2(src, dst)
+                    done += 1
+            return self.json({"ok": True, "done": done})
         if u.path == "/api/backup":
-            data = self.body_json()
-            return self.json({"ok": True, "file": make_backup(data.get("kind", "manual"))})
+            data = self.body_json(); return self.json({"ok": True, "file": make_backup(data.get("kind", "manual"))})
         if u.path == "/api/restore":
-            n = safe(unquote(q.get("name", [""])[0]))
-            src = AREAS["trash"] / n
-            if not src.exists():
-                return self.json({"error": "não encontrado"}, 404)
+            n = safe(unquote(q.get("name", [""])[0])); src = AREAS["trash"] / n
+            if not src.exists(): return self.json({"error": "não encontrado"}, 404)
             clean = "_".join(n.split("_")[1:]) if "_" in n else n
-            src.rename(AREAS["files"] / clean)
-            return self.json({"ok": True})
+            src.rename(AREAS["files"] / clean); return self.json({"ok": True})
         if u.path == "/api/settings":
-            data = self.body_json()
-            cfg = load(SETTINGS, {})
-            cfg.update(data)
-            save(SETTINGS, cfg)
-            notify("Configurações", "Preferências atualizadas.", "success")
+            data = self.body_json(); cfg = load(SETTINGS, {}); cfg.update(data); save(SETTINGS, cfg); notify("Configurações", "Preferências atualizadas.", "success")
             return self.json({"ok": True})
         if u.path == "/api/cleanup":
-            days = load(SETTINGS, {}).get("camera_retention_days", 30)
-            return self.json({"ok": True, "removed": cleanup_old(days)})
+            days = load(SETTINGS, {}).get("camera_retention_days", 30); return self.json({"ok": True, "removed": cleanup_old(days)})
         if u.path == "/api/camera/add":
-            data = self.body_json()
-            cams = load(CAMERAS, [])
-            name = data.get("name") or f"Camera {len(cams)+1}"
-            ip = data.get("ip", "")
-            folder = AREAS["cameras"] / safe(name.replace(" ", "_"))
-            folder.mkdir(exist_ok=True)
+            data = self.body_json(); cams = load(CAMERAS, [])
+            name = data.get("name") or f"Camera {len(cams)+1}"; ip = data.get("ip", ""); folder = AREAS["cameras"] / safe(name.replace(" ", "_")); folder.mkdir(exist_ok=True)
             cam = {
-                "id": uuid.uuid4().hex[:8],
-                "name": name,
-                "type": data.get("type", "rtsp"),
-                "brand": data.get("brand", data.get("type", "IP Camera")),
-                "ip": ip,
-                "user": data.get("user", ""),
-                "password": data.get("password", ""),
-                "rtsp": data.get("rtsp", ""),
-                "quality": data.get("quality", "media"),
-                "resolution": data.get("resolution", "Auto"),
-                "recording": data.get("recording", "manual"),
-                "location": data.get("location", ""),
-                "folder": str(folder),
-                "status": "online" if ip and any(test_port(ip, p) for p in [554, 8554, 80, 8080, 8899]) else "cadastrada",
-                "snapshot": ""
+                "id": uuid.uuid4().hex[:8], "name": name, "type": data.get("type", "rtsp"), "brand": data.get("brand", data.get("type", "IP Camera")),
+                "ip": ip, "user": data.get("user", ""), "password": data.get("password", ""), "rtsp": data.get("rtsp", ""), "quality": data.get("quality", "media"),
+                "resolution": data.get("resolution", "Auto"), "recording": data.get("recording", "manual"), "location": data.get("location", ""), "folder": str(folder),
+                "status": "online" if ip and any(test_port(ip, p) for p in [554, 8554, 80, 8080, 8899]) else "cadastrada", "snapshot": ""
             }
-            cams.append(cam)
-            save(CAMERAS, cams)
-            notify("Câmera adicionada", name, "success")
-            add_event("camera_added", name, "Câmera cadastrada.", "success")
+            cams.append(cam); save(CAMERAS, cams); notify("Câmera adicionada", name, "success"); add_event("camera_added", name, "Câmera cadastrada.", "success")
             return self.json({"ok": True, "camera": cam})
-        if u.path == "/api/camera/add_many":
-            data = self.body_json()
-            cams = load(CAMERAS, [])
-            added = 0
-            for item in data.get("items", []):
-                name = item.get("name") or item.get("suggested_name") or f"Camera {len(cams)+1}"
-                ip = item.get("ip", "")
-                if not ip:
-                    continue
-                folder = AREAS["cameras"] / safe(name.replace(" ", "_"))
-                folder.mkdir(exist_ok=True)
-                cams.append({
-                    "id": uuid.uuid4().hex[:8],
-                    "name": name,
-                    "type": item.get("type", "ipcam"),
-                    "brand": item.get("type", "IP Camera"),
-                    "ip": ip,
-                    "user": "",
-                    "password": "",
-                    "rtsp": rtsp_suggestions(ip)[0] if ("RTSP" in item.get("type","")) else "",
-                    "quality": "media",
-                    "resolution": "Auto",
-                    "recording": "manual",
-                    "location": "",
-                    "folder": str(folder),
-                    "status": "online",
-                    "snapshot": ""
-                })
-                added += 1
-            save(CAMERAS, cams)
-            notify("Câmeras adicionadas", f"{added} câmera(s) adicionada(s).", "success")
-            return self.json({"ok": True, "added": added})
         if u.path == "/api/camera/check":
             cams = load(CAMERAS, [])
             for c in cams:
-                ip = c.get("ip")
-                old = c.get("status")
+                ip = c.get("ip"); old = c.get("status")
                 c["status"] = "online" if ip and any(test_port(ip, p) for p in [554, 8554, 80, 8080, 8899]) else "offline"
-                if old != c["status"]:
-                    add_event("camera_status", c.get("name", ""), f"Status mudou para {c['status']}", "warning" if c["status"] == "offline" else "success")
-            save(CAMERAS, cams)
-            return self.json({"ok": True, "items": cams})
+                if old != c["status"]: add_event("camera_status", c.get("name", ""), f"Status mudou para {c['status']}", "warning" if c["status"] == "offline" else "success")
+            save(CAMERAS, cams); return self.json({"ok": True, "items": cams})
         if u.path == "/api/camera/delete":
-            cid = self.body_json().get("id")
-            save(CAMERAS, [c for c in load(CAMERAS, []) if c.get("id") != cid])
-            return self.json({"ok": True})
-        if u.path == "/api/notifications/clear":
-            save(NOTES, [])
-            return self.json({"ok": True})
+            cid = self.body_json().get("id"); save(CAMERAS, [c for c in load(CAMERAS, []) if c.get("id") != cid]); return self.json({"ok": True})
+        if u.path == "/api/notifications/clear": save(NOTES, []); return self.json({"ok": True})
         if u.path == "/api/trash/empty":
             for p in AREAS["trash"].iterdir():
-                if p.is_file():
-                    p.unlink()
+                if p.is_file(): p.unlink()
             return self.json({"ok": True})
         return self.json({"error": "rota não encontrada"}, 404)
 
     def do_DELETE(self):
-        u = urlparse(self.path)
-        q = parse_qs(u.query)
+        u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/api/delete":
-            a = q.get("area", ["files"])[0]
-            n = safe(unquote(q.get("name", [""])[0]))
-            p = area_dir(a) / n
+            a = q.get("area", ["files"])[0]; n = safe(unquote(q.get("name", [""])[0])); p = area_dir(a) / n
             if p.exists() and p.is_file():
                 p.rename(AREAS["trash"] / f"{uuid.uuid4().hex}_{p.name}")
                 return self.json({"ok": True})
             return self.json({"error": "arquivo não encontrado"}, 404)
         return self.json({"error": "rota não encontrada"}, 404)
 
-print("Open Home Server API v10.2 Enterprise LTS rodando na porta 8090")
+print(f"Open Home Server API {VERSION} rodando na porta 8090")
 HTTPServer(("0.0.0.0", 8090), H).serve_forever()
