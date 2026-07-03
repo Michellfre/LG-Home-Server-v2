@@ -1,3 +1,3 @@
-# Open Home Server v10.3 Professional
+# Open Home Server v10.4 Android Sensor Edition
 
-Monitoramento melhorado, permissões Android, rede em tempo real, Explorer com seleção múltipla, copiar/recortar/colar, progresso de upload, processos e logs.
+Integração com Termux:API: bateria, temperatura, Wi-Fi, alertas, notificações e saúde do servidor.
