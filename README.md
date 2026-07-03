@@ -1,3 +1,3 @@
-# Open Home OS v11.1 Tuya + SD
+# Open Home Server v10.7 Jarvis + TV Mode
 
-Sensores Tuya manuais e capacidade do SD Card no dashboard.
+Jarvis por voz/texto, modo TV e câmeras só contam online quando RTSP + snapshot funcionarem.

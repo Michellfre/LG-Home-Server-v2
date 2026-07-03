@@ -1,5 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
-echo "Open Home OS v11.1 Diagnóstico"
-echo "IP: $(ip -o -4 addr show 2>/dev/null | awk '!/127.0.0.1/ {split($4,a,"/"); print a[1]; exit}')"
-echo "Armazenamento:"; df -h | grep -E '/storage|/mnt/media_rw|/sdcard|/data'
-echo "API log:"; tail -60 ~/OpenHomeOS/Logs/api.log 2>/dev/null
+echo "Open Home Server v10.7 - Diagnóstico"
+python --version
+pgrep nginx >/dev/null && echo "Nginx: ativo" || echo "Nginx: parado"
+pgrep -f api/server.py >/dev/null && echo "API: ativa" || echo "API: parada"
+tail -40 ~/Servidor/Logs/api.log 2>/dev/null
