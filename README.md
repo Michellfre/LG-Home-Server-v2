@@ -1,3 +1,3 @@
-# Open Home Server v10.7 Jarvis + TV Mode
+# Open Home OS v11.0 Core
 
-Jarvis por voz/texto, modo TV e câmeras só contam online quando RTSP + snapshot funcionarem.
+Sistema operacional residencial modular para Android/Termux: Dashboard, Jarvis, NVR, NAS, TV Mode, Central IA, IoT e Backup.
