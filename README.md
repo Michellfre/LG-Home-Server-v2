@@ -1,3 +1,3 @@
-# Open Home OS v13.2 Discovery Engine
+# Open Home OS v13.3 Discovery UI
 
-Discovery Engine com ARP, ping, varredura de portas, classificação de dispositivos e integração com Open Home Connect.
+Interface do Discovery em tempo real, importação de dispositivos e barra de progresso.
