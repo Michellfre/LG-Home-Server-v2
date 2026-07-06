@@ -1,40 +1,260 @@
-const API_PORT=8090,apiBase=()=>location.protocol+"//"+location.hostname+":"+API_PORT;
-let lastNetworkDevices=[];let discoveryTimer=null;
-function byId(id){return document.getElementById(id)}
-function toast(t){let e=byId("toast");e.textContent=t;e.style.display="block";setTimeout(()=>e.style.display="none",3000)}
-function speak(t){try{speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(t);u.lang="pt-BR";speechSynthesis.speak(u)}catch(e){}}
-function pct(v){return parseInt(String(v||"0").replace("%",""))||0}
-function setBar(id,v){let e=byId(id);if(e){e.style.width=Math.max(0,Math.min(100,v))+"%";e.className=v>85?"bad":v>65?"warn":""}}
-function icon(t){return t==="door"?"🚪":t==="temperature_humidity"?"🌡️":t==="motion"?"🏃":t==="light"?"💡":t==="plug"?"🔌":t==="switch"?"🔘":t==="camera"?"📹":t==="mqtt"?"📡":t==="printer"?"🖨️":t==="chromecast"?"📺":t==="pc_nas"?"💻":t==="home_assistant"?"🏠":t==="open_home_os"?"🟢":t==="esp32"?"🧩":t==="raspberry"?"🍓":"📡"}
-function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active-page"));byId(id).classList.add("active-page");document.querySelectorAll(".sidebar a").forEach(a=>a.classList.remove("active"));const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,tv:6,system:7};if(order[id]!=null)document.querySelectorAll(".sidebar a")[order[id]].classList.add("active");byId("page-title").textContent={dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS";if(id==="connect")loadDevices();if(id==="rooms")loadRooms();if(id==="setup")loadTuyaConfig();if(id==="jarvis")loadJarvis();if(id==="network")loadNetwork();if(id==="system")diag();if(id==="notifications")loadNotifications();loadStatus()}
-async function safeJson(url,opt={}){let r=await fetch(url,opt);if(!r.ok)throw new Error(await r.text());return await r.json()}
-async function loadStatus(){try{let d=await safeJson(apiBase()+"/api/status?"+Date.now());let h=await safeJson(apiBase()+"/api/house?"+Date.now());ip.textContent=d.ip;disk.textContent=d.disk;sdcard.textContent=d.sdcard;sd_extra.textContent=d.storage.sdcard.mount||d.storage.sdcard.message||"";health.textContent=d.health+"%";health_label.textContent=d.health>=90?"saúde excelente":d.health>=75?"atenção leve":"atenção";house_message.textContent=h.message;env_temp.textContent=d.connect.avg_temperature!==null?d.connect.avg_temperature+"°C":"sem dados";env_hum.textContent=d.connect.avg_humidity!==null?d.connect.avg_humidity+"%":"sem dados";wifi.textContent=d.wifi;dev_total.textContent=d.connect.total;dev_online.textContent=d.connect.online;open_doors.textContent=d.connect.open_doors;discovered.textContent=(d.network&&d.network.count)||0;setBar("disk-bar",pct(d.used));renderDeviceCards(d.connect.devices||[]);if(byId("tv-clock")){tv_clock.textContent=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});tv_health.textContent=d.health+"%";tv_devs.textContent=d.connect.online+"/"+d.connect.total;tv_env.textContent=d.connect.avg_temperature!==null?d.connect.avg_temperature+"°C":"sem dados";tv_hum.textContent=d.connect.avg_humidity!==null?d.connect.avg_humidity+"%":"sem dados";tv_doors.textContent=d.connect.open_doors;tv_sd.textContent=d.sdcard}loadEvents();loadNotifyCount()}catch(e){console.log(e)}}
-function renderDeviceCards(items){device_cards.innerHTML=items.length?items.slice(0,12).map(d=>`<div class="module"><h3>${icon(d.type)} ${d.name}</h3><p>${d.online?"Online":"Offline"}</p><small>${d.ip?("IP "+d.ip+" • "):""}${d.room||""} ${d.temperature!==""?("• "+d.temperature+"°C"):""} ${d.humidity!==""?("• "+d.humidity+"%"):""} ${d.battery!==""?("• Bat "+d.battery+"%"):""}</small></div>`).join(""):"<p>Nenhum dispositivo cadastrado.</p>"}
-async function loadNotifyCount(){let d=await safeJson(apiBase()+"/api/notifications?"+Date.now());notify_count.textContent=(d.items||[]).length}
-async function loadEvents(){let d=await safeJson(apiBase()+"/api/events?"+Date.now());events.innerHTML=(d.items||[]).slice(0,8).map(e=>`<div class="note"><div><b>${e.kind}</b><br><small>${e.time} • ${e.module} • ${e.message}</small></div><span>${e.level}</span></div>`).join("")||"<p>Sem eventos.</p>"}
-async function loadDevices(){let d=await safeJson(apiBase()+"/api/connect/devices?"+Date.now());device_list.innerHTML=(d.items||[]).map(x=>`<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.online?"Online":"Offline"}</p><small>${x.source||"manual"} • ${x.room||""}<br>${x.ip?("IP "+x.ip+"<br>"):""}Temp ${x.temperature||"--"}°C • Umid ${x.humidity||"--"}% • Bat ${x.battery||"--"}%</small><br><button onclick="editDevice('${x.id}','${x.temperature||""}','${x.humidity||""}','${x.battery||""}')">Atualizar</button><button class="danger" onclick="deleteDevice('${x.id}')">Excluir</button></div>`).join("")||"<p>Nenhum dispositivo.</p>"}
-async function addDevice(){let data={name:dev_name.value,room:dev_room.value,type:dev_type.value,temperature:dev_temp.value,humidity:dev_hum.value,battery:dev_bat.value};await fetch(apiBase()+"/api/connect/device/add",{method:"POST",body:JSON.stringify(data)});loadDevices();loadStatus();toast("Dispositivo adicionado")}
-async function editDevice(id,t,h,b){let nt=prompt("Temperatura:",t);if(nt===null)return;let nh=prompt("Umidade:",h);if(nh===null)return;let nb=prompt("Bateria:",b);await fetch(apiBase()+"/api/connect/device/update",{method:"POST",body:JSON.stringify({id,temperature:nt,humidity:nh,battery:nb})});loadDevices();loadStatus()}
-async function deleteDevice(id){if(!confirm("Excluir dispositivo?"))return;await fetch(apiBase()+"/api/connect/device/delete",{method:"POST",body:JSON.stringify({id})});loadDevices();loadStatus()}
-async function loadRooms(){let d=await safeJson(apiBase()+"/api/connect/rooms?"+Date.now());rooms_list.innerHTML=(d.items||[]).map(r=>`<div class="module"><h3>🏘️ ${r.name}</h3><p>${r.online}/${r.devices} online</p><small>Temp ${r.avg_temperature??"--"}°C • Umid ${r.avg_humidity??"--"}% • Portas abertas ${r.doors_open}</small></div>`).join("")||"<p>Nenhum ambiente com dispositivos.</p>"}
-async function loadTuyaConfig(){let c=await safeJson(apiBase()+"/api/connect/tuya/config");tuya_client.value=c.client_id||"";tuya_secret.value=c.client_secret||"";tuya_dc.value=c.data_center||"https://openapi.tuyaus.com";tuya_asset.value=c.asset_id||"";setup_result.textContent=JSON.stringify({enabled:c.enabled,last_sync:c.last_sync,data_center:c.data_center},null,2)}
-function tuyaPayload(){return {enabled:true,client_id:tuya_client.value,client_secret:tuya_secret.value,data_center:tuya_dc.value,asset_id:tuya_asset.value}}
-async function saveTuya(){let r=await safeJson(apiBase()+"/api/connect/tuya/config",{method:"POST",body:JSON.stringify(tuyaPayload())});setup_result.textContent=JSON.stringify(r,null,2);toast("Configuração salva")}
-async function testTuya(){let r=await safeJson(apiBase()+"/api/connect/tuya/test",{method:"POST",body:JSON.stringify(tuyaPayload())});setup_result.textContent=JSON.stringify(r,null,2);toast(r.message)}
-async function syncTuya(){let r=await safeJson(apiBase()+"/api/connect/tuya/sync",{method:"POST",body:"{}"});setup_result.textContent=JSON.stringify(r,null,2);loadStatus();loadDevices();toast(r.ok?`Sincronizado: ${r.count} dispositivos`:"Falha na sincronização")}
-async function startDiscovery(){try{network_list.innerHTML="<p>Busca iniciada...</p>";discovery_message.textContent="Iniciando descoberta...";discovery_progress.style.width="3%";await safeJson(apiBase()+"/api/discovery/start",{method:"POST",body:JSON.stringify({limit:254})});toast("Discovery iniciado");if(discoveryTimer)clearInterval(discoveryTimer);discoveryTimer=setInterval(loadDiscoveryState,900);loadDiscoveryState()}catch(e){toast("Erro ao iniciar: "+e.message)}}
-async function loadDiscoveryState(){try{let s=await safeJson(apiBase()+"/api/discovery/state?"+Date.now());discovery_progress.style.width=(s.progress||0)+"%";discovery_message.textContent=s.message||"Aguardando...";lastNetworkDevices=s.devices||[];renderDiscoverySummary(s);renderNetwork(lastNetworkDevices);if(!s.running&&discoveryTimer){clearInterval(discoveryTimer);discoveryTimer=null;loadStatus();toast("Discovery concluído")}}catch(e){console.log(e)}}
-async function loadNetwork(){let d=await safeJson(apiBase()+"/api/discovery?"+Date.now());lastNetworkDevices=d.devices||[];discovery_progress.style.width=(d.progress||100)+"%";discovery_message.textContent=d.last_scan?`Última busca: ${d.last_scan}`:"Nenhuma busca ainda.";renderDiscoverySummary(d);renderNetwork(lastNetworkDevices)}
-function renderDiscoverySummary(d){let sum=d.summary||{};network_summary.innerHTML=`<div>Rede<b>${d.network||"--"}</b></div><div>Gateway<b>${d.gateway||"--"}</b></div><div>Encontrados<b>${d.count||0}</b></div><div>Câmeras<b>${sum.camera||0}</b></div><div>PC/NAS<b>${sum.pc_nas||0}</b></div><div>Web<b>${sum.web_device||0}</b></div><div>Impressoras<b>${sum.printer||0}</b></div>`}
-function renderNetwork(items){items=items||[];let f=(discovery_filter?.value||"");let q=(discovery_search?.value||"").toLowerCase();let filtered=items.filter(x=>(!f||x.type===f)&&(!q||JSON.stringify(x).toLowerCase().includes(q)));network_list.innerHTML=filtered.length?filtered.map((x,i)=>`<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.ip}</p><span class="device-type">${x.type}</span><br><small>${x.vendor||"Fabricante não identificado"}<br>Confiança ${x.confidence||0}%<br>Portas: ${(x.ports||[]).join(", ")||"--"}<br>Serviços: ${(x.services||[]).join(", ")||"--"}</small><br><button class="ok" onclick="importDiscovered(${i})">Adicionar ao Open Home</button>${(x.ports||[]).some(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))?`<button class="ghost" onclick="openDevice('${x.ip}',${(x.ports||[]).find(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))})">Abrir interface</button>`:""}</div>`).join(""):"<p>Nenhum dispositivo encontrado para esse filtro.</p>"}
-function openDevice(ip,port){let scheme=port==443?"https":"http";window.open(`${scheme}://${ip}:${port}`,"_blank")}
-async function importDiscovered(index){let filtered=(lastNetworkDevices||[]).filter(x=>(!discovery_filter.value||x.type===discovery_filter.value)&&(!discovery_search.value||JSON.stringify(x).toLowerCase().includes(discovery_search.value.toLowerCase())));let dev=filtered[index];if(!dev)return;let room=prompt("Ambiente para este dispositivo:",dev.room||"Rede")||"Rede";let r=await safeJson(apiBase()+"/api/discovery/device/import",{method:"POST",body:JSON.stringify({device:dev,room})});toast(r.ok?"Adicionado ao Open Home Connect":"Falha ao adicionar");loadStatus()}
-async function loadJarvis(){let d=await safeJson(apiBase()+"/api/jarvis");jarvis_history.innerHTML=(d.history||[]).map(h=>`<div class="note"><div><b>${h.command}</b><br><small>${h.time} • ${h.reply}</small></div><span>${h.action}</span></div>`).join("")||"<p>Sem histórico.</p>"}
-async function sendJarvis(){let cmd=jarvis_input.value;let r=await safeJson(apiBase()+"/api/jarvis/command",{method:"POST",body:JSON.stringify({command:cmd})});jarvis_reply.textContent=r.reply;speak(r.reply);jarvis_input.value="";loadJarvis();if(r.action==="open_connect")showPage("connect");if(r.action==="open_dashboard")showPage("dashboard");if(r.action==="open_setup")showPage("setup");if(r.action==="open_network")showPage("network")}
-function quick(t){jarvis_input.value=t;sendJarvis()}
-function startVoice(){let SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert("Reconhecimento de voz não suportado.");return}let rec=new SR();rec.lang="pt-BR";rec.onresult=e=>{jarvis_input.value=e.results[0][0].transcript;sendJarvis()};rec.start();toast("Jarvis ouvindo...")}
-async function createBackup(){let r=await safeJson(apiBase()+"/api/backup",{method:"POST",body:"{}"});toast("Backup criado: "+r.file);loadStatus()}
-async function diag(){let d=await safeJson(apiBase()+"/api/system/diagnostic?"+Date.now());diagnostic.textContent=JSON.stringify(d,null,2)}
-async function loadNotifications(){let d=await safeJson(apiBase()+"/api/notifications?"+Date.now());notifications_list.innerHTML=(d.items||[]).map(n=>`<div class="note"><div><b>${n.title}</b><br><small>${n.time} • ${n.message}</small></div><span>${n.level}</span></div>`).join("")||"<p>Sem notificações.</p>"}
-async function clearNotifications(){await fetch(apiBase()+"/api/notifications/clear",{method:"POST"});loadNotifications();loadNotifyCount()}
-loadStatus();setInterval(loadStatus,5000);loadDiscoveryState();
+const API_PORT = 8090;
+const apiBase = () => location.protocol + "//" + location.hostname + ":" + API_PORT;
+let lastNetworkDevices = [];
+let discoveryTimer = null;
+
+function el(id){ return document.getElementById(id); }
+function setText(id, value){ const e = el(id); if(e) e.textContent = value ?? ""; }
+function setHTML(id, value){ const e = el(id); if(e) e.innerHTML = value ?? ""; }
+function toast(t){ const e=el("toast"); if(!e) return; e.textContent=t; e.style.display="block"; setTimeout(()=>e.style.display="none",3000); }
+function speak(t){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t); u.lang="pt-BR"; speechSynthesis.speak(u); }catch(e){} }
+function pct(v){ return parseInt(String(v||"0").replace("%",""))||0; }
+function setBar(id,v){ const e=el(id); if(e){ e.style.width=Math.max(0,Math.min(100,v))+"%"; e.className=v>85?"bad":v>65?"warn":""; } }
+function icon(t){ return t==="door"?"🚪":t==="temperature_humidity"?"🌡️":t==="motion"?"🏃":t==="light"?"💡":t==="plug"?"🔌":t==="switch"?"🔘":t==="camera"?"📹":t==="mqtt"?"📡":t==="printer"?"🖨️":t==="chromecast"?"📺":t==="pc_nas"?"💻":t==="home_assistant"?"🏠":t==="open_home_os"?"🟢":t==="esp32"?"🧩":t==="raspberry"?"🍓":"📡"; }
+
+async function safeJson(url,opt={}){
+  const r = await fetch(url,opt);
+  if(!r.ok) throw new Error(await r.text());
+  return await r.json();
+}
+
+function showPage(id){
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active-page"));
+  const page = el(id); if(page) page.classList.add("active-page");
+  document.querySelectorAll(".sidebar a").forEach(a=>a.classList.remove("active"));
+  const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,tv:6,system:7};
+  if(order[id]!=null && document.querySelectorAll(".sidebar a")[order[id]]) document.querySelectorAll(".sidebar a")[order[id]].classList.add("active");
+  setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
+  if(id==="connect") loadDevices();
+  if(id==="rooms") loadRooms();
+  if(id==="setup") loadTuyaConfig();
+  if(id==="jarvis") loadJarvis();
+  if(id==="network") loadNetwork();
+  if(id==="system") diag();
+  if(id==="notifications") loadNotifications();
+  loadStatus();
+}
+
+async function loadStatus(){
+  try{
+    const d = await safeJson(apiBase()+"/api/status?"+Date.now());
+    const h = await safeJson(apiBase()+"/api/house?"+Date.now());
+    setText("ip", d.ip);
+    setText("disk", d.disk);
+    setText("sdcard", d.sdcard);
+    setText("sd-extra", d.storage?.sdcard?.mount || d.storage?.sdcard?.message || "");
+    setText("health", d.health+"%");
+    setText("health-label", d.health>=90?"saúde excelente":d.health>=75?"atenção leve":"atenção");
+    setText("house-message", h.message);
+    setText("env-temp", d.connect.avg_temperature!==null?d.connect.avg_temperature+"°C":"sem dados");
+    setText("env-hum", d.connect.avg_humidity!==null?d.connect.avg_humidity+"%":"sem dados");
+    setText("wifi", d.wifi);
+    setText("dev-total", d.connect.total);
+    setText("dev-online", d.connect.online);
+    setText("open-doors", d.connect.open_doors);
+    setText("discovered", (d.network&&d.network.count)||0);
+    setBar("disk-bar", pct(d.used));
+    renderDeviceCards(d.connect.devices||[]);
+    if(el("tv-clock")){
+      setText("tv-clock", new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+      setText("tv-health", d.health+"%");
+      setText("tv-devs", d.connect.online+"/"+d.connect.total);
+      setText("tv-env", d.connect.avg_temperature!==null?d.connect.avg_temperature+"°C":"sem dados");
+      setText("tv-hum", d.connect.avg_humidity!==null?d.connect.avg_humidity+"%":"sem dados");
+      setText("tv-doors", d.connect.open_doors);
+      setText("tv-sd", d.sdcard);
+    }
+    loadEvents();
+    loadNotifyCount();
+  }catch(e){ console.log(e); }
+}
+
+function renderDeviceCards(items){
+  setHTML("device-cards", items.length ? items.slice(0,12).map(d=>`<div class="module"><h3>${icon(d.type)} ${d.name}</h3><p>${d.online?"Online":"Offline"}</p><small>${d.ip?("IP "+d.ip+" • "):""}${d.room||""} ${d.temperature!==""?("• "+d.temperature+"°C"):""} ${d.humidity!==""?("• "+d.humidity+"%"):""} ${d.battery!==""?("• Bat "+d.battery+"%"):""}</small></div>`).join("") : "<p>Nenhum dispositivo cadastrado.</p>");
+}
+
+async function loadNotifyCount(){
+  try{ const d=await safeJson(apiBase()+"/api/notifications?"+Date.now()); setText("notify-count",(d.items||[]).length); }catch(e){}
+}
+
+async function loadEvents(){
+  try{
+    const d=await safeJson(apiBase()+"/api/events?"+Date.now());
+    setHTML("events",(d.items||[]).slice(0,8).map(e=>`<div class="note"><div><b>${e.kind}</b><br><small>${e.time} • ${e.module} • ${e.message}</small></div><span>${e.level}</span></div>`).join("")||"<p>Sem eventos.</p>");
+  }catch(e){}
+}
+
+async function loadDevices(){
+  const d=await safeJson(apiBase()+"/api/connect/devices?"+Date.now());
+  setHTML("device-list",(d.items||[]).map(x=>`<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.online?"Online":"Offline"}</p><small>${x.source||"manual"} • ${x.room||""}<br>${x.ip?("IP "+x.ip+"<br>"):""}Temp ${x.temperature||"--"}°C • Umid ${x.humidity||"--"}% • Bat ${x.battery||"--"}%</small><br><button onclick="editDevice('${x.id}','${x.temperature||""}','${x.humidity||""}','${x.battery||""}')">Atualizar</button><button class="danger" onclick="deleteDevice('${x.id}')">Excluir</button></div>`).join("")||"<p>Nenhum dispositivo.</p>");
+}
+
+async function addDevice(){
+  const data={name:el("dev-name")?.value,room:el("dev-room")?.value,type:el("dev-type")?.value,temperature:el("dev-temp")?.value,humidity:el("dev-hum")?.value,battery:el("dev-bat")?.value};
+  await fetch(apiBase()+"/api/connect/device/add",{method:"POST",body:JSON.stringify(data)});
+  loadDevices(); loadStatus(); toast("Dispositivo adicionado");
+}
+
+async function editDevice(id,t,h,b){
+  const nt=prompt("Temperatura:",t); if(nt===null) return;
+  const nh=prompt("Umidade:",h); if(nh===null) return;
+  const nb=prompt("Bateria:",b);
+  await fetch(apiBase()+"/api/connect/device/update",{method:"POST",body:JSON.stringify({id,temperature:nt,humidity:nh,battery:nb})});
+  loadDevices(); loadStatus();
+}
+
+async function deleteDevice(id){
+  if(!confirm("Excluir dispositivo?")) return;
+  await fetch(apiBase()+"/api/connect/device/delete",{method:"POST",body:JSON.stringify({id})});
+  loadDevices(); loadStatus();
+}
+
+async function loadRooms(){
+  const d=await safeJson(apiBase()+"/api/connect/rooms?"+Date.now());
+  setHTML("rooms-list",(d.items||[]).map(r=>`<div class="module"><h3>🏘️ ${r.name}</h3><p>${r.online}/${r.devices} online</p><small>Temp ${r.avg_temperature??"--"}°C • Umid ${r.avg_humidity??"--"}% • Portas abertas ${r.doors_open}</small></div>`).join("")||"<p>Nenhum ambiente com dispositivos.</p>");
+}
+
+async function loadTuyaConfig(){
+  const c=await safeJson(apiBase()+"/api/connect/tuya/config");
+  if(el("tuya-client")) el("tuya-client").value=c.client_id||"";
+  if(el("tuya-secret")) el("tuya-secret").value=c.client_secret||"";
+  if(el("tuya-dc")) el("tuya-dc").value=c.data_center||"https://openapi.tuyaus.com";
+  if(el("tuya-asset")) el("tuya-asset").value=c.asset_id||"";
+  setText("setup-result",JSON.stringify({enabled:c.enabled,last_sync:c.last_sync,data_center:c.data_center},null,2));
+}
+
+function tuyaPayload(){
+  return {enabled:true,client_id:el("tuya-client")?.value,client_secret:el("tuya-secret")?.value,data_center:el("tuya-dc")?.value,asset_id:el("tuya-asset")?.value};
+}
+
+async function saveTuya(){
+  const r=await safeJson(apiBase()+"/api/connect/tuya/config",{method:"POST",body:JSON.stringify(tuyaPayload())});
+  setText("setup-result",JSON.stringify(r,null,2)); toast("Configuração salva");
+}
+async function testTuya(){
+  const r=await safeJson(apiBase()+"/api/connect/tuya/test",{method:"POST",body:JSON.stringify(tuyaPayload())});
+  setText("setup-result",JSON.stringify(r,null,2)); toast(r.message);
+}
+async function syncTuya(){
+  const r=await safeJson(apiBase()+"/api/connect/tuya/sync",{method:"POST",body:"{}"});
+  setText("setup-result",JSON.stringify(r,null,2)); loadStatus(); loadDevices(); toast(r.ok?`Sincronizado: ${r.count} dispositivos`:"Falha na sincronização");
+}
+
+async function startDiscovery(){
+  try{
+    setHTML("network-list","<p>Busca iniciada...</p>");
+    setText("discovery-message","Iniciando descoberta...");
+    const bar=el("discovery-progress"); if(bar) bar.style.width="3%";
+    await safeJson(apiBase()+"/api/discovery/start",{method:"POST",body:JSON.stringify({limit:254})});
+    toast("Discovery iniciado");
+    if(discoveryTimer) clearInterval(discoveryTimer);
+    discoveryTimer=setInterval(loadDiscoveryState,900);
+    loadDiscoveryState();
+  }catch(e){ toast("Erro ao iniciar: "+e.message); }
+}
+
+async function loadDiscoveryState(){
+  try{
+    const s=await safeJson(apiBase()+"/api/discovery/state?"+Date.now());
+    const bar=el("discovery-progress"); if(bar) bar.style.width=(s.progress||0)+"%";
+    setText("discovery-message",s.message||"Aguardando...");
+    lastNetworkDevices=s.devices||[];
+    renderDiscoverySummary(s);
+    renderNetwork(lastNetworkDevices);
+    if(!s.running && discoveryTimer){
+      clearInterval(discoveryTimer);
+      discoveryTimer=null;
+      loadStatus();
+      toast("Discovery concluído");
+    }
+  }catch(e){ console.log(e); }
+}
+
+async function loadNetwork(){
+  try{
+    const d=await safeJson(apiBase()+"/api/discovery?"+Date.now());
+    lastNetworkDevices=d.devices||[];
+    const bar=el("discovery-progress"); if(bar) bar.style.width=(d.progress||100)+"%";
+    setText("discovery-message",d.last_scan?`Última busca: ${d.last_scan}`:"Nenhuma busca ainda.");
+    renderDiscoverySummary(d);
+    renderNetwork(lastNetworkDevices);
+  }catch(e){ toast("Erro ao atualizar: "+e.message); }
+}
+
+function renderDiscoverySummary(d){
+  const sum=d.summary||{};
+  setHTML("network-summary",`<div>Rede<b>${d.network||"--"}</b></div><div>Gateway<b>${d.gateway||"--"}</b></div><div>Encontrados<b>${d.count||0}</b></div><div>Câmeras<b>${sum.camera||0}</b></div><div>PC/NAS<b>${sum.pc_nas||0}</b></div><div>Web<b>${sum.web_device||0}</b></div><div>Impressoras<b>${sum.printer||0}</b></div>`);
+}
+
+function filteredNetwork(items){
+  const f=el("discovery-filter")?.value||"";
+  const q=(el("discovery-search")?.value||"").toLowerCase();
+  return (items||[]).filter(x=>(!f||x.type===f)&&(!q||JSON.stringify(x).toLowerCase().includes(q)));
+}
+
+function renderNetwork(items){
+  const filtered=filteredNetwork(items||[]);
+  setHTML("network-list",filtered.length?filtered.map((x,i)=>`<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.ip}</p><span class="device-type">${x.type}</span><br><small>${x.vendor||"Fabricante não identificado"}<br>Confiança ${x.confidence||0}%<br>Portas: ${(x.ports||[]).join(", ")||"--"}<br>Serviços: ${(x.services||[]).join(", ")||"--"}</small><br><button class="ok" onclick="importDiscovered(${i})">Adicionar ao Open Home</button>${(x.ports||[]).some(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))?`<button class="ghost" onclick="openDevice('${x.ip}',${(x.ports||[]).find(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))})">Abrir interface</button>`:""}</div>`).join(""):"<p>Nenhum dispositivo encontrado para esse filtro.</p>");
+}
+
+function openDevice(ip,port){
+  const scheme=port==443?"https":"http";
+  window.open(`${scheme}://${ip}:${port}`,"_blank");
+}
+
+async function importDiscovered(index){
+  const filtered=filteredNetwork(lastNetworkDevices||[]);
+  const dev=filtered[index];
+  if(!dev) return;
+  const room=prompt("Ambiente para este dispositivo:",dev.room||"Rede")||"Rede";
+  const r=await safeJson(apiBase()+"/api/discovery/device/import",{method:"POST",body:JSON.stringify({device:dev,room})});
+  toast(r.ok?"Adicionado ao Open Home Connect":"Falha ao adicionar");
+  loadStatus();
+}
+
+async function loadJarvis(){
+  const d=await safeJson(apiBase()+"/api/jarvis");
+  setHTML("jarvis-history",(d.history||[]).map(h=>`<div class="note"><div><b>${h.command}</b><br><small>${h.time} • ${h.reply}</small></div><span>${h.action}</span></div>`).join("")||"<p>Sem histórico.</p>");
+}
+
+async function sendJarvis(){
+  const cmd=el("jarvis-input")?.value||"";
+  const r=await safeJson(apiBase()+"/api/jarvis/command",{method:"POST",body:JSON.stringify({command:cmd})});
+  setText("jarvis-reply",r.reply);
+  speak(r.reply);
+  if(el("jarvis-input")) el("jarvis-input").value="";
+  loadJarvis();
+  if(r.action==="open_connect") showPage("connect");
+  if(r.action==="open_dashboard") showPage("dashboard");
+  if(r.action==="open_setup") showPage("setup");
+  if(r.action==="open_network") showPage("network");
+}
+function quick(t){ if(el("jarvis-input")) el("jarvis-input").value=t; sendJarvis(); }
+function startVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ alert("Reconhecimento de voz não suportado."); return; }
+  const rec=new SR(); rec.lang="pt-BR";
+  rec.onresult=e=>{ if(el("jarvis-input")) el("jarvis-input").value=e.results[0][0].transcript; sendJarvis(); };
+  rec.start(); toast("Jarvis ouvindo...");
+}
+
+async function createBackup(){
+  const r=await safeJson(apiBase()+"/api/backup",{method:"POST",body:"{}"});
+  toast("Backup criado: "+r.file); loadStatus();
+}
+async function diag(){
+  const d=await safeJson(apiBase()+"/api/system/diagnostic?"+Date.now());
+  setText("diagnostic",JSON.stringify(d,null,2));
+}
+async function loadNotifications(){
+  const d=await safeJson(apiBase()+"/api/notifications?"+Date.now());
+  setHTML("notifications-list",(d.items||[]).map(n=>`<div class="note"><div><b>${n.title}</b><br><small>${n.time} • ${n.message}</small></div><span>${n.level}</span></div>`).join("")||"<p>Sem notificações.</p>");
+}
+async function clearNotifications(){
+  await fetch(apiBase()+"/api/notifications/clear",{method:"POST"});
+  loadNotifications(); loadNotifyCount();
+}
+
+loadStatus();
+setInterval(loadStatus,5000);
+loadDiscoveryState();

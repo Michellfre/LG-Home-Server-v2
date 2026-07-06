@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-echo "Open Home OS v13.3 Discovery UI - Instalando..."
+echo "Open Home OS v13.4 Discovery PRO Fix - Instalando..."
 BASE="$HOME/OpenHomeOS"; WEB="$BASE/Web"; CONFIG="$BASE/Config"; DATA="$BASE/Data"
 mkdir -p "$WEB" "$CONFIG" "$BASE/Logs" "$DATA/Files" "$DATA/Cameras" "$DATA/Snapshots" "$DATA/Backups" "$DATA/IoT" "$DATA/Connect" "$DATA/Network" "$DATA/Discovery"
 [ -f "$CONFIG/devices.json" ] || echo "[]" > "$CONFIG/devices.json"

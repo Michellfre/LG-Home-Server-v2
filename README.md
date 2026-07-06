@@ -1,3 +1,3 @@
-# Open Home OS v13.3 Discovery UI
+# Open Home OS v13.4 Discovery PRO Fix
 
-Interface do Discovery em tempo real, importação de dispositivos e barra de progresso.
+Correção do erro `network_list is not defined` e remoção de dependência de variáveis globais automáticas do DOM.
