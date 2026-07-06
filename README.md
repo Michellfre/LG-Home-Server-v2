@@ -1,3 +1,3 @@
-# Open Home OS v12.0 Smart Home Core
+# Open Home OS v13.0 Open Home Connect
 
-Dashboard inteligente, saúde da casa, sensores por ambiente, SD Card, eventos e Jarvis.
+Camada universal para dispositivos smart home com assistente de instalação Tuya Cloud.
