@@ -1,3 +1,3 @@
-# Open Home OS v13.0 Open Home Connect
+# Open Home OS v13.1 Connect Core
 
-Camada universal para dispositivos smart home com assistente de instalação Tuya Cloud.
+Consolidação da V13 com saúde real, ambientes, descoberta de rede, Tuya e Jarvis integrado.
