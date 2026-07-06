@@ -1,3 +1,3 @@
-# Open Home OS v13.1 Connect Core
+# Open Home OS v13.2 Discovery Engine
 
-Consolidação da V13 com saúde real, ambientes, descoberta de rede, Tuya e Jarvis integrado.
+Discovery Engine com ARP, ping, varredura de portas, classificação de dispositivos e integração com Open Home Connect.

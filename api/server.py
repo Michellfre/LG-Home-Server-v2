@@ -1,86 +1,227 @@
 #!/usr/bin/env python3
-import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading
+import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v13.1 Connect Core"
-BUILD="000181"
-HOME=Path.home(); BASE=HOME/"OpenHomeOS"; WEB=BASE/"Web"; CONFIG=BASE/"Config"; DATA=BASE/"Data"; LOGS=BASE/"Logs"
-AREAS={k:DATA/v for k,v in {"files":"Files","cameras":"Cameras","snapshots":"Snapshots","backups":"Backups","iot":"IoT","connect":"Connect","network":"Network"}.items()}
+VERSION="Open Home OS v13.2 Discovery Engine"
+BUILD="000220"
+HOME=Path.home()
+BASE=HOME/"OpenHomeOS"; WEB=BASE/"Web"; CONFIG=BASE/"Config"; DATA=BASE/"Data"; LOGS=BASE/"Logs"
+AREAS={k:DATA/v for k,v in {
+"files":"Files","cameras":"Cameras","snapshots":"Snapshots","backups":"Backups",
+"iot":"IoT","connect":"Connect","network":"Network","discovery":"Discovery"
+}.items()}
 for p in [WEB,CONFIG,DATA,LOGS,*AREAS.values()]: p.mkdir(parents=True,exist_ok=True)
+
 SETTINGS=CONFIG/"settings.json"; CAMERAS=CONFIG/"cameras.json"; EVENTS=CONFIG/"events.json"; NOTES=CONFIG/"notifications.json"; JARVIS=CONFIG/"jarvis.json"
 DEVICES=CONFIG/"devices.json"; ROOMS=CONFIG/"rooms.json"; TUYA_CFG=CONFIG/"tuya_cloud.json"; TUYA_CACHE=CONFIG/"tuya_cache.json"; NETWORK=CONFIG/"network_devices.json"
 
 def ensure(p,d):
-    if not p.exists(): p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding="utf-8")
-ensure(SETTINGS,{"system_name":"Open Home OS","version":VERSION,"build":BUILD,"network_scan":True})
-ensure(CAMERAS,[]); ensure(EVENTS,[]); ensure(NOTES,[]); ensure(JARVIS,{"history":[]}); ensure(DEVICES,[]); ensure(ROOMS,["Sala","Quarto","Cozinha","Garagem","Oficina","Jardim"])
+    if not p.exists():
+        p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding="utf-8")
+
+ensure(SETTINGS,{"system_name":"Open Home OS","version":VERSION,"build":BUILD,"network_scan":True,"scan_limit":254})
+ensure(CAMERAS,[]); ensure(EVENTS,[]); ensure(NOTES,[]); ensure(JARVIS,{"history":[]}); ensure(DEVICES,[])
+ensure(ROOMS,["Sala","Quarto","Cozinha","Garagem","Oficina","Jardim"])
 ensure(TUYA_CFG,{"enabled":False,"client_id":"","client_secret":"","data_center":"https://openapi.tuyaus.com","asset_id":"","last_sync":"","token":"","token_expire":0})
-ensure(TUYA_CACHE,{"last_sync":"","devices":[]}); ensure(NETWORK,{"last_scan":"","devices":[]})
+ensure(TUYA_CACHE,{"last_sync":"","devices":[]}); ensure(NETWORK,{"last_scan":"","devices":[],"summary":{}})
 CPU={"total":0,"idle":0}
 
-def run(c,t=6):
+def run(c,t=8):
     try: return subprocess.check_output(c,shell=True,text=True,stderr=subprocess.DEVNULL,timeout=t).strip()
     except Exception: return ""
+
 def load(p,d):
     try: return json.loads(p.read_text(encoding="utf-8"))
     except Exception: return d
+
 def save(p,d): p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding="utf-8")
 def now(): return time.strftime("%d/%m/%Y %H:%M:%S")
-def ev(k,msg,level="info",mod="core"):
-    a=load(EVENTS,[]); a.insert(0,{"id":uuid.uuid4().hex[:8],"kind":k,"module":mod,"message":msg,"level":level,"time":now()}); save(EVENTS,a[:1500])
-def ip(): return run("ip -o -4 addr show | awk '!/127.0.0.1/ {split($4,a,\"/\"); print a[1]; exit}'") or "não encontrado"
-def gateway(): return run("ip route | awk '/default/ {print $3; exit}'") or ""
-def df_line(line):
-    p=line.split()
-    return {"filesystem":p[0],"size":p[1],"used":p[2],"available":p[3],"percent":p[4],"mount":" ".join(p[5:])} if len(p)>=6 else {}
-def storage():
-    internal=df_line(run(f"df -h {HOME} | awk 'NR==2'"))
-    cards=[df_line(x) for x in run("df -h | grep -E '/storage|/mnt/media_rw|/sdcard' | grep -v emulated",5).splitlines()]
-    cards=[x for x in cards if x]
-    return {"internal":internal,"sdcard":cards[0] if cards else {"available":False,"message":"SD Card não detectado"},"candidates":cards}
-def cpu():
-    global CPU
-    try:
-        vals=[int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
-        idle=vals[3]+(vals[4] if len(vals)>4 else 0); total=sum(vals)
-        if not CPU["total"]: CPU={"total":total,"idle":idle}; return "calculando..."
-        dt=total-CPU["total"]; di=idle-CPU["idle"]; CPU={"total":total,"idle":idle}
-        return f"{max(0,min(100,int((1-di/dt)*100)))}%" if dt else "0%"
-    except Exception: return "indisponível"
-def tj(cmd):
-    o=run(cmd,5)
-    try: return json.loads(o) if o else {}
-    except Exception: return {}
-def battery():
-    b=tj("termux-battery-status"); return {"available":True,**b} if b else {"available":False}
-def wifi():
-    w=tj("termux-wifi-connectioninfo"); return {"available":True,**w} if w else {"available":False,"ssid":"indisponível"}
-def thermal():
-    b=battery(); return b.get("temperature") if b.get("temperature") is not None else None
-def num(v):
-    try: return float(str(v).replace(",","."))
-    except Exception: return None
 
-TYPE_MAP={"mcs":"door","doorcontact":"door","pir":"motion","motion":"motion","wsdcg":"temperature_humidity","temp":"temperature_humidity","humidity":"temperature_humidity","cz":"plug","kg":"switch","light":"light","dj":"light","ipc":"camera","camera":"camera"}
-def normalize_tuya(d):
-    name=d.get("name") or d.get("device_name") or "Dispositivo Tuya"; did=d.get("id") or d.get("device_id") or uuid.uuid4().hex[:8]
-    cat=(d.get("category") or d.get("product_category") or "").lower(); dtype="device"
-    for k,v in TYPE_MAP.items():
-        if k in cat or k in name.lower(): dtype=v; break
-    sm={str(s.get("code")):s.get("value") for s in (d.get("status",[]) or [])}
-    temp=sm.get("va_temperature") or sm.get("temp_current") or sm.get("temperature") or sm.get("temp")
-    hum=sm.get("va_humidity") or sm.get("humidity_value") or sm.get("humidity")
-    bat=sm.get("battery_percentage") or sm.get("battery_state") or sm.get("battery")
-    if isinstance(temp,(int,float)) and temp>100: temp=round(temp/10,1)
-    if isinstance(hum,(int,float)) and hum>1000: hum=round(hum/10,1)
-    return {"id":did,"source":"tuya","name":name,"room":d.get("room","Sem ambiente"),"type":dtype,"online":bool(d.get("online",True)),"category":cat,"temperature":temp if temp is not None else "","humidity":hum if hum is not None else "","battery":bat if bat is not None else "","open":sm.get("doorcontact_state"),"raw":d,"updated":now()}
-def merge_devices(items):
-    cur=load(DEVICES,[]); by={x.get("id"):x for x in cur}
-    for item in items:
-        old=by.get(item["id"],{}); old.update(item); by[item["id"]]=old
-    out=list(by.values()); save(DEVICES,out); return out
+def ev(k,msg,level="info",mod="core"):
+    a=load(EVENTS,[])
+    a.insert(0,{"id":uuid.uuid4().hex[:8],"kind":k,"module":mod,"message":msg,"level":level,"time":now()})
+    save(EVENTS,a[:2000])
+
+def local_ip():
+    return run("ip -o -4 addr show | awk '!/127.0.0.1/ {split($4,a,\"/\"); print a[1]; exit}'") or "não encontrado"
+
+def gateway():
+    return run("ip route | awk '/default/ {print $3; exit}'") or ""
+
+def mac_vendor(mac):
+    if not mac: return ""
+    prefix=mac.upper().replace(":","")[:6]
+    vendors={
+        "001A11":"Google","F4F5D8":"Google","D8C4E9":"Google","A4CF12":"Espressif","24D7EB":"Espressif","30AEA4":"Espressif",
+        "B827EB":"Raspberry Pi","DCA632":"Raspberry Pi","E45F01":"Raspberry Pi","F0D5BF":"Intelbras","001422":"Dell",
+        "001B63":"Apple","F0DBE2":"Apple","3C5A37":"Samsung","B827C5":"Raspberry Pi","F45C89":"Samsung","7C2EDD":"Samsung",
+        "BC1485":"Samsung","28E31F":"Xiaomi","50EC50":"Xiaomi","A0A3B3":"Sony","E8F2E2":"LG","CC2D83":"LG","ACDCE5":"LG",
+        "18B430":"Nest","44D9E7":"Ubiquiti","60E327":"TP-Link","50C7BF":"TP-Link","C0C9E3":"TP-Link","D8B6B7":"Tuya/SmartLife",
+        "84F3EB":"Tuya/SmartLife","7CF666":"Tuya/SmartLife","10D561":"Tuya/SmartLife","70A2B3":"Tuya/SmartLife",
+        "FCF5C4":"Amazon","F0272D":"Amazon","74C246":"Amazon"
+    }
+    return vendors.get(prefix,"")
+
+def arp_table():
+    txt=run("ip neigh show",5)
+    out={}
+    for line in txt.splitlines():
+        parts=line.split()
+        if not parts: continue
+        ip=parts[0]; mac=""
+        if "lladdr" in parts:
+            try: mac=parts[parts.index("lladdr")+1]
+            except Exception: pass
+        state=parts[-1] if parts else ""
+        out[ip]={"mac":mac,"state":state,"vendor":mac_vendor(mac)}
+    return out
+
+def ping_host(addr):
+    return bool(run(f"ping -c 1 -W 1 {addr}",2))
+
+PORTS={
+  21:"FTP",22:"SSH",23:"Telnet",53:"DNS",80:"HTTP",81:"HTTP",443:"HTTPS",445:"SMB",
+  554:"RTSP",8000:"HTTP-alt",8008:"Chromecast",8009:"Chromecast",8080:"HTTP-alt",8081:"HTTP-alt",
+  8090:"OpenHomeAPI",1883:"MQTT",5000:"NAS/UPnP",5001:"NAS",5353:"mDNS",8123:"HomeAssistant",9100:"Printer"
+}
+COMMON_PORTS=list(PORTS.keys())
+
+def port_open(addr,port,timeout=.22):
+    s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.settimeout(timeout)
+    try: ok=s.connect_ex((addr,port))==0
+    except Exception: ok=False
+    try: s.close()
+    except Exception: pass
+    return ok
+
+def grab_http(addr,port):
+    scheme="https" if port==443 else "http"
+    url=f"{scheme}://{addr}:{port}/"
+    try:
+        req=urllib.request.Request(url,headers={"User-Agent":"OpenHomeDiscovery/13.2"})
+        with urllib.request.urlopen(req,timeout=2) as r:
+            data=r.read(900).decode("utf-8","ignore").lower()
+            hdr=str(r.headers).lower()
+            title=""
+            if "<title>" in data and "</title>" in data:
+                title=data.split("<title>",1)[1].split("</title>",1)[0].strip()[:80]
+            return {"ok":True,"title":title,"headers":hdr[:600],"sample":data[:300]}
+    except Exception:
+        return {"ok":False}
+
+def classify(addr,ports,arp=None,http_info=None):
+    arp=arp or {}; vendor=(arp.get("vendor") or "").lower()
+    title=" ".join([(x.get("title") or "") for x in (http_info or {}).values()]).lower()
+    headers=" ".join([(x.get("headers") or "") for x in (http_info or {}).values()]).lower()
+    text=title+" "+headers+" "+vendor
+    kind="device"; score=40; name=""
+    if 8090 in ports:
+        kind="open_home_os"; score=95; name="Open Home OS"
+    elif 8123 in ports or "home assistant" in text:
+        kind="home_assistant"; score=95; name="Home Assistant"
+    elif 1883 in ports:
+        kind="mqtt"; score=90; name="Broker MQTT"
+    elif 554 in ports:
+        kind="camera"; score=88; name="Câmera RTSP"
+    elif 8008 in ports or 8009 in ports or "chromecast" in text or "google" in text:
+        kind="chromecast"; score=80; name="Chromecast/Google"
+    elif 9100 in ports:
+        kind="printer"; score=85; name="Impressora"
+    elif 445 in ports:
+        kind="pc_nas"; score=75; name="PC/NAS"
+    elif 80 in ports or 443 in ports or 8080 in ports:
+        kind="web_device"; score=65; name="Dispositivo Web"
+    if "raspberry" in text:
+        kind="raspberry"; score=max(score,85); name="Raspberry Pi"
+    if "samsung" in text:
+        kind="tv_samsung" if kind=="web_device" else kind; name=name or "Samsung"
+    if "lg" in text:
+        kind="tv_lg" if kind=="web_device" else kind; name=name or "LG"
+    if "tuya" in text or "smartlife" in text:
+        kind="tuya_local"; score=max(score,75); name=name or "Tuya/SmartLife"
+    if "espressif" in text or "esp" in text:
+        kind="esp32"; score=max(score,78); name=name or "ESP32/ESP8266"
+    return kind,score,name
+
+def scan_ip(addr,arp=None):
+    open_ports=[]
+    for port in COMMON_PORTS:
+        if port_open(addr,port): open_ports.append(port)
+    alive=bool(open_ports) or ping_host(addr)
+    if not alive: return None
+    http_info={}
+    for p in open_ports:
+        if p in [80,81,443,8000,8008,8080,8081,8123,8090,5000,5001]:
+            hi=grab_http(addr,p)
+            if hi.get("ok"): http_info[str(p)]=hi
+    try: dns=socket.gethostbyaddr(addr)[0]
+    except Exception: dns=""
+    arp=arp or {}
+    kind,score,smart_name=classify(addr,open_ports,arp,http_info)
+    name=dns or smart_name or addr
+    return {
+        "id":"net_"+addr.replace(".","_"),
+        "source":"discovery",
+        "name":name,
+        "ip":addr,
+        "mac":arp.get("mac",""),
+        "vendor":arp.get("vendor",""),
+        "type":kind,
+        "online":True,
+        "confidence":score,
+        "ports":open_ports,
+        "services":[PORTS.get(p,str(p)) for p in open_ports],
+        "http":http_info,
+        "updated":now()
+    }
+
+def discovery_scan(limit=None):
+    ipaddr=local_ip()
+    try:
+        net=ipaddress.ip_network(ipaddr+"/24",strict=False)
+    except Exception:
+        return {"ok":False,"message":"Rede não detectada","devices":[]}
+    limit=limit or int(load(SETTINGS,{}).get("scan_limit",254))
+    candidates=[str(x) for x in list(net.hosts())[:limit]]
+    arp=arp_table()
+    # include ARP entries even if outside first limit
+    for a in arp.keys():
+        if a not in candidates:
+            candidates.append(a)
+    results=[]; lock=threading.Lock()
+    def worker(a):
+        r=scan_ip(a,arp.get(a,{}))
+        if r:
+            with lock: results.append(r)
+    threads=[]
+    for a in candidates:
+        th=threading.Thread(target=worker,args=(a,),daemon=True)
+        th.start(); threads.append(th)
+    for th in threads:
+        th.join(timeout=.45)
+    # remove duplicates and sort by ip
+    by={x["ip"]:x for x in results}
+    results=list(by.values())
+    def ipkey(x):
+        try: return tuple(int(p) for p in x["ip"].split("."))
+        except Exception: return (999,999,999,999)
+    results.sort(key=ipkey)
+    summary={}
+    for d in results:
+        summary[d["type"]]=summary.get(d["type"],0)+1
+    payload={"last_scan":now(),"network":str(net),"gateway":gateway(),"devices":results,"summary":summary,"count":len(results)}
+    save(NETWORK,payload)
+    # Merge only useful discovered devices; keep existing user data
+    merge_devices([{
+        "id":d["id"],"source":"discovery","name":d["name"],"room":"Rede","type":d["type"],
+        "online":True,"ip":d["ip"],"mac":d.get("mac",""),"vendor":d.get("vendor",""),
+        "ports":d.get("ports",[]),"confidence":d.get("confidence",0),"updated":now()
+    } for d in results])
+    ev("discovery_scan",f"{len(results)} dispositivos encontrados na rede","success","discovery")
+    return {"ok":True,**payload}
+
 def connect_summary():
     devs=load(DEVICES,[]); online=[d for d in devs if d.get("online",True)]
     doors=[d for d in devs if d.get("type")=="door"]; opened=[d for d in doors if d.get("open") in [True,"open","opened",1]]
@@ -89,7 +230,8 @@ def connect_summary():
     rooms={}
     for d in devs:
         r=d.get("room") or "Sem ambiente"; rooms.setdefault(r,{"name":r,"devices":0,"online":0,"temps":[],"hums":[],"doors_open":0})
-        rooms[r]["devices"]+=1; rooms[r]["online"]+=1 if d.get("online",True) else 0
+        rooms[r]["devices"]+=1
+        if d.get("online",True): rooms[r]["online"]+=1
         if num(d.get("temperature")) is not None: rooms[r]["temps"].append(num(d.get("temperature")))
         if num(d.get("humidity")) is not None: rooms[r]["hums"].append(num(d.get("humidity")))
         if d.get("type")=="door" and d.get("open") in [True,"open","opened",1]: rooms[r]["doors_open"]+=1
@@ -118,6 +260,23 @@ def tuya_token():
     if res.get("success") and res.get("result"):
         cfg["token"]=res["result"].get("access_token",""); cfg["token_expire"]=time.time()+int(res["result"].get("expire_time",7200)); save(TUYA_CFG,cfg); return cfg["token"]
     return ""
+def normalize_tuya(d):
+    name=d.get("name") or d.get("device_name") or "Dispositivo Tuya"; did=d.get("id") or d.get("device_id") or uuid.uuid4().hex[:8]
+    cat=(d.get("category") or d.get("product_category") or "").lower(); dtype="device"
+    for k,v in {"mcs":"door","doorcontact":"door","pir":"motion","motion":"motion","wsdcg":"temperature_humidity","temp":"temperature_humidity","humidity":"temperature_humidity","cz":"plug","kg":"switch","light":"light","dj":"light","ipc":"camera","camera":"camera"}.items():
+        if k in cat or k in name.lower(): dtype=v; break
+    sm={str(s.get("code")):s.get("value") for s in (d.get("status",[]) or [])}
+    temp=sm.get("va_temperature") or sm.get("temp_current") or sm.get("temperature") or sm.get("temp")
+    hum=sm.get("va_humidity") or sm.get("humidity_value") or sm.get("humidity")
+    bat=sm.get("battery_percentage") or sm.get("battery_state") or sm.get("battery")
+    if isinstance(temp,(int,float)) and temp>100: temp=round(temp/10,1)
+    if isinstance(hum,(int,float)) and hum>1000: hum=round(hum/10,1)
+    return {"id":did,"source":"tuya","name":name,"room":d.get("room","Sem ambiente"),"type":dtype,"online":bool(d.get("online",True)),"category":cat,"temperature":temp if temp is not None else "","humidity":hum if hum is not None else "","battery":bat if bat is not None else "","open":sm.get("doorcontact_state"),"raw":d,"updated":now()}
+def merge_devices(items):
+    cur=load(DEVICES,[]); by={x.get("id"):x for x in cur}
+    for item in items:
+        old=by.get(item["id"],{}); old.update(item); by[item["id"]]=old
+    out=list(by.values()); save(DEVICES,out); return out
 def tuya_sync():
     cfg=load(TUYA_CFG,{})
     if not cfg.get("enabled"): return {"ok":False,"message":"Tuya Cloud desativada"}
@@ -133,35 +292,6 @@ def tuya_sync():
     cfg["last_sync"]=now(); save(TUYA_CFG,cfg); ev("tuya_sync",f"{len(norm)} dispositivos sincronizados","success","connect")
     return {"ok":True,"count":len(norm),"devices":norm,"raw":last}
 
-COMMON_PORTS=[80,81,443,554,8000,8080,8081,8090,1883,5000,5001,8123,9100]
-def scan_ip(addr):
-    found=[]
-    for port in COMMON_PORTS:
-        s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.settimeout(.18)
-        try:
-            if s.connect_ex((addr,port))==0: found.append(port)
-        except Exception: pass
-        s.close()
-    if not found: return None
-    try: name=socket.gethostbyaddr(addr)[0]
-    except Exception: name=""
-    kind="camera" if 554 in found else "mqtt" if 1883 in found else "home_assistant" if 8123 in found else "printer" if 9100 in found else "web_device"
-    return {"id":"net_"+addr.replace(".","_"),"source":"network","name":name or addr,"ip":addr,"type":kind,"online":True,"ports":found,"updated":now()}
-def network_scan():
-    try: net=ipaddress.ip_network(ip()+"/24",strict=False)
-    except Exception: return {"ok":False,"message":"Rede não detectada"}
-    results=[]; lock=threading.Lock()
-    def worker(a):
-        r=scan_ip(a)
-        if r:
-            with lock: results.append(r)
-    threads=[]
-    for a in [str(x) for x in list(net.hosts())[:80]]:
-        th=threading.Thread(target=worker,args=(a,),daemon=True); th.start(); threads.append(th)
-    for th in threads: th.join(timeout=.25)
-    save(NETWORK,{"last_scan":now(),"devices":results}); merge_devices(results); ev("network_scan",f"{len(results)} dispositivos encontrados","success","connect")
-    return {"ok":True,"count":len(results),"devices":results}
-
 def cam_counts():
     cams=load(CAMERAS,[])
     return {"registered":len(cams),"online":len([c for c in cams if c.get("verified") and c.get("status")=="online"]),"pending":len([c for c in cams if not c.get("verified")]),"offline":len([c for c in cams if c.get("status")=="offline"])}
@@ -176,9 +306,12 @@ def health_score(st):
     if st["connect"]["open_doors"]>0: score-=min(15,st["connect"]["open_doors"]*5)
     if st.get("nginx")!="Ativo": score-=15
     return max(0,min(100,score))
+def df_line(line):
+    p=line.split()
+    return {"filesystem":p[0],"size":p[1],"used":p[2],"available":p[3],"percent":p[4],"mount":" ".join(p[5:])} if len(p)>=6 else {}
 def status():
     b=battery(); w=wifi(); stg=storage(); sd=stg["sdcard"]; con=connect_summary(); temp=thermal()
-    d={"version":VERSION,"build":BUILD,"ip":ip(),"gateway":gateway(),"nginx":"Ativo" if run("pgrep nginx") else "Parado","api":"Ativa","disk":run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),"used":run(f"df {HOME} | awk 'NR==2 {{print $5}}'"),"storage":stg,"sdcard":f"{sd.get('available')} livre de {sd.get('size')}" if sd.get("available") else "não detectado","cpu":cpu(),"mem":run("free -m | awk '/Mem:/ {print $3\" MB usado de \"$2\" MB\"}'"),"uptime":run("uptime -p"),"battery":f"{b.get('percentage')}% • {b.get('status','')}" if b.get("percentage") is not None else "indisponível","temperature":f"{temp}°C" if temp is not None else "indisponível","wifi":w.get("ssid") or "indisponível","wifi_detail":w,"connect":con,"cameras":cam_counts(),"network":load(NETWORK,{}),"backups":len(list(AREAS["backups"].glob("*"))),"tuya_cloud":load(TUYA_CFG,{}),"updated":now()}
+    d={"version":VERSION,"build":BUILD,"ip":local_ip(),"gateway":gateway(),"nginx":"Ativo" if run("pgrep nginx") else "Parado","api":"Ativa","disk":run(f"df -h {HOME} | awk 'NR==2 {{print $4 \" livre de \" $2}}'"),"used":run(f"df {HOME} | awk 'NR==2 {{print $5}}'"),"storage":stg,"sdcard":f"{sd.get('available')} livre de {sd.get('size')}" if sd.get("available") else "não detectado","cpu":cpu(),"mem":run("free -m | awk '/Mem:/ {print $3\" MB usado de \"$2\" MB\"}'"),"uptime":run("uptime -p"),"battery":f"{b.get('percentage')}% • {b.get('status','')}" if b.get("percentage") is not None else "indisponível","temperature":f"{temp}°C" if temp is not None else "indisponível","wifi":w.get("ssid") or "indisponível","wifi_detail":w,"connect":con,"cameras":cam_counts(),"network":load(NETWORK,{}),"backups":len(list(AREAS["backups"].glob("*"))),"tuya_cloud":load(TUYA_CFG,{}),"updated":now()}
     d["health"]=health_score(d); return d
 def house():
     st=status(); con=st["connect"]; probs=[]
@@ -188,14 +321,14 @@ def house():
     if con["open_doors"]: probs.append(f"{con['open_doors']} porta(s)/janela(s) aberta(s)")
     return {"temperature":con["avg_temperature"],"humidity":con["avg_humidity"],"connect":con,"health":st["health"],"problems":probs,"message":"Saúde excelente." if not probs else "; ".join(probs)}
 def backup():
-    target=AREAS["backups"]/f"backup_v13_1_{time.strftime('%Y%m%d_%H%M%S')}.zip"
+    target=AREAS["backups"]/f"backup_v13_2_{time.strftime('%Y%m%d_%H%M%S')}.zip"
     with zipfile.ZipFile(target,"w",zipfile.ZIP_DEFLATED) as z:
-        for base in [CONFIG,AREAS["files"],AREAS["cameras"],AREAS["snapshots"],AREAS["iot"],AREAS["connect"]]:
+        for base in [CONFIG,AREAS["files"],AREAS["cameras"],AREAS["snapshots"],AREAS["iot"],AREAS["connect"],AREAS["network"]]:
             for p in base.rglob("*"):
                 if p.is_file(): z.write(p,p.relative_to(BASE))
     ev("backup",target.name,"success","backup"); return target.name
 def jarvis(cmd):
-    t=(cmd or "").lower(); st=status(); hs=house(); reply="Não entendi. Tente: como está a casa, portas abertas, sincronizar Tuya, procurar rede."; action="none"
+    t=(cmd or "").lower(); st=status(); hs=house(); reply="Não entendi. Tente: como está a casa, portas abertas, descobrir rede, sincronizar Tuya."; action="none"
     if "casa" in t:
         reply=f"Sua casa está com saúde de {st['health']} por cento. {st['connect']['online']} dispositivos online. Temperatura média {hs['temperature'] or 'sem dados'} graus. {hs['message']}."; action="open_dashboard"
     elif "porta" in t or "janela" in t:
@@ -203,8 +336,8 @@ def jarvis(cmd):
         reply="Todas as portas e janelas estão fechadas." if not opens else "Abertas: "+", ".join([x.get("name","Sensor") for x in opens]); action="open_connect"
     elif "tuya" in t and ("sincron" in t or "buscar" in t):
         r=tuya_sync(); reply=f"Sincronização Tuya concluída. {r.get('count',0)} dispositivos encontrados." if r.get("ok") else "Não consegui sincronizar Tuya: "+r.get("message","erro"); action="open_setup"
-    elif "rede" in t or "procurar" in t or "scan" in t:
-        r=network_scan(); reply=f"Busca na rede concluída. {r.get('count',0)} dispositivos encontrados." if r.get("ok") else r.get("message","Falha na busca"); action="open_connect"
+    elif "rede" in t or "procurar" in t or "scan" in t or "descobrir" in t:
+        r=discovery_scan(); reply=f"Descoberta concluída. {r.get('count',0)} dispositivos encontrados." if r.get("ok") else r.get("message","Falha na busca"); action="open_network"
     elif "sensor" in t or "dispositivo" in t:
         c=st["connect"]; reply=f"Open Home Connect tem {c['total']} dispositivos, {c['online']} online e {c['offline']} offline."; action="open_connect"
     elif "backup" in t:
@@ -215,22 +348,39 @@ def jarvis(cmd):
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): return
     def js(self,d,c=200):
-        b=json.dumps(d,ensure_ascii=False).encode(); self.send_response(c); self.send_header("Content-Type","application/json; charset=utf-8"); self.send_header("Access-Control-Allow-Origin","*"); self.send_header("Access-Control-Allow-Methods","GET,POST,DELETE,OPTIONS"); self.send_header("Access-Control-Allow-Headers","Content-Type"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
+        b=json.dumps(d,ensure_ascii=False).encode(); self.send_response(c)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin","*"); self.send_header("Access-Control-Allow-Methods","GET,POST,DELETE,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers","Content-Type"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
     def body(self):
         try: return json.loads(self.rfile.read(int(self.headers.get("Content-Length","0"))).decode("utf-8","ignore"))
         except Exception: return {}
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
-        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":load(CAMERAS,[])},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"log":(LOGS/"api.log").read_text(errors="ignore")[-5000:] if (LOGS/"api.log").exists() else ""}}
+        routes={
+            "/api/status":lambda:status(), "/api/house":lambda:house(),
+            "/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},
+            "/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},
+            "/api/connect/network":lambda:load(NETWORK,{}),
+            "/api/discovery":lambda:load(NETWORK,{}),
+            "/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),
+            "/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),
+            "/api/jarvis":lambda:load(JARVIS,{}),
+            "/api/cameras":lambda:{"items":load(CAMERAS,[])},
+            "/api/events":lambda:{"items":load(EVENTS,[])},
+            "/api/notifications":lambda:{"items":load(NOTES,[])},
+            "/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-6000:] if (LOGS/"api.log").exists() else ""}
+        }
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
     def do_POST(self):
         u=urlparse(self.path); d=self.body()
         if u.path=="/api/jarvis/command": return self.js(jarvis(d.get("command","")))
-        if u.path=="/api/connect/network/scan": return self.js(network_scan())
+        if u.path in ["/api/connect/network/scan","/api/discovery/scan"]: return self.js(discovery_scan(d.get("limit")))
         if u.path=="/api/connect/device/add":
-            d.setdefault("id",uuid.uuid4().hex[:8]); d.setdefault("source","manual"); d.setdefault("online",True); d["updated"]=now(); a=load(DEVICES,[]); a.append(d); save(DEVICES,a); ev("device_add",f"{d.get('name','Dispositivo')} adicionado","success","connect"); return self.js({"ok":True})
+            d.setdefault("id",uuid.uuid4().hex[:8]); d.setdefault("source","manual"); d.setdefault("online",True); d["updated"]=now()
+            a=load(DEVICES,[]); a.append(d); save(DEVICES,a); ev("device_add",f"{d.get('name','Dispositivo')} adicionado","success","connect"); return self.js({"ok":True})
         if u.path=="/api/connect/device/update":
             a=load(DEVICES,[])
             for x in a:
