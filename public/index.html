@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1410"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.1 Camera Manager Pro</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1420"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.2 Camera Diagnostics</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v13.5 com correção JavaScript e Discovery PRO.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
@@ -34,7 +34,7 @@
       <label class="wide">Caminho RTSP opcional<input id="cam-path" placeholder="Deixe vazio para testar caminhos comuns"></label>
     </div>
     <div class="modal-actions">
-      <button onclick="probeCameraONVIF()">Detectar ONVIF</button><button onclick="testCameraRTSP(false)">Teste rápido</button><button onclick="testCameraRTSP(true)">Busca profunda</button>
+      <button onclick="runRTSPDiagnostic()">Diagnóstico RTSP</button><button onclick="probeCameraONVIF()">Detectar ONVIF</button><button onclick="testCameraRTSP(false)">Teste rápido</button><button onclick="testCameraRTSP(true)">Busca profunda</button>
       <button class="ok" onclick="saveCameraRTSP()">Testar e adicionar</button>
     </div>
     <div id="camera-test-status" class="camera-test-status idle">
@@ -42,11 +42,11 @@
   <span>Use “Teste rápido” primeiro. A busca profunda testa mais caminhos e transportes.</span>
 </div>
 <div id="camera-test-progress" class="camera-progress hidden"><div></div></div>
-<div id="camera-test-summary" class="camera-summary"></div>
+<div id="camera-test-summary" class="camera-summary"></div><div id="camera-recommendations" class="camera-recommendations"></div>
 <details class="camera-debug">
   <summary>Detalhes técnicos</summary>
   <pre id="camera-test-result">Aguardando teste...</pre>
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1410"></script></body></html>
+<div id="toast"></div><script src="js/app.js?v=1420"></script></body></html>

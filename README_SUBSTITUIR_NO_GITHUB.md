@@ -1,4 +1,4 @@
-# Open Home OS v14.1 — Camera Manager Pro
+# Open Home OS v14.2 — Camera Manager Diagnostics
 
 Substitua no GitHub:
 
@@ -8,15 +8,15 @@ Substitua no GitHub:
 - `public/js/app.js`
 - `config/camera_profiles.json`
 
-## Melhorias
+## Novidades
 
-- teste RTSP por TCP, UDP e modo automático;
-- teste rápido e busca profunda;
-- mais caminhos conhecidos para Yoosee;
-- classificação de erros de autenticação, transporte, conexão e caminho;
-- resultado visual amigável;
-- detalhes técnicos recolhidos em uma seção expansível;
-- salvamento do transporte que funcionou.
+- diagnóstico RTSP direto com comandos `OPTIONS` e `DESCRIBE`;
+- identificação do servidor RTSP, métodos públicos e autenticação;
+- confirmação de credenciais e SDP antes do teste pesado com `ffprobe`;
+- diagnóstico completo por dispositivo;
+- recomendações claras na interface;
+- suporte mantido para Yoosee e Xiaomi Xiao Fang;
+- nenhum teste automático de senhas.
 
 ## Atualização no Termux
 
@@ -30,3 +30,9 @@ bash scripts/start_api.sh
 ```
 
 No Brave: `Ctrl + F5`.
+
+Fluxo recomendado:
+1. Diagnóstico RTSP;
+2. Teste rápido;
+3. Busca profunda;
+4. Testar e adicionar.

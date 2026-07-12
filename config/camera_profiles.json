@@ -1,5 +1,5 @@
 {
-  "version": "14.1",
+  "version": "14.2",
   "profiles": [
     {
       "id": "yoosee",
@@ -47,6 +47,11 @@
         "tcp",
         "udp",
         "auto"
+      ],
+      "diagnostic_notes": [
+        "Verificar resposta OPTIONS/DESCRIBE",
+        "Identificar autenticação Basic/Digest",
+        "Confirmar SDP antes de testar vídeo"
       ]
     },
     {

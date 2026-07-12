@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading, urllib.parse
+import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading, urllib.parse, base64, re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.1 Camera Manager Pro"
-BUILD="001410"
+VERSION="Open Home OS v14.2 Camera Manager Diagnostics"
+BUILD="001420"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -392,6 +392,201 @@ def rtsp_url(ip,port,path,user="",password=""):
             auth=urllib.parse.quote(str(user),safe="")+":"+urllib.parse.quote(str(password),safe="")+"@"
     return f"rtsp://{auth}{ip}:{int(port or 554)}{path}"
 
+
+def parse_rtsp_response(raw):
+    text=raw.decode("utf-8","ignore") if isinstance(raw,(bytes,bytearray)) else str(raw or "")
+    lines=text.replace("\r\n","\n").split("\n")
+    status_line=lines[0].strip() if lines else ""
+    headers={}
+    body=""
+    body_started=False
+    body_lines=[]
+    for line in lines[1:]:
+        if body_started:
+            body_lines.append(line)
+            continue
+        if line=="":
+            body_started=True
+            continue
+        if ":" in line:
+            k,v=line.split(":",1)
+            headers[k.strip().lower()]=v.strip()
+    body="\n".join(body_lines)
+    code=None
+    m=re.search(r"RTSP/\d\.\d\s+(\d+)",status_line)
+    if m:
+        code=int(m.group(1))
+    return {"status_line":status_line,"status":code,"headers":headers,"body":body[:2000]}
+
+def rtsp_raw_request(ip,port,path,method="OPTIONS",username="",password="",timeout=4,authorization=""):
+    path=(path or "/").strip()
+    if not path.startswith("/"):
+        path="/"+path
+    uri=f"rtsp://{ip}:{int(port or 554)}{path}"
+    cseq=int(time.time()*1000)%100000
+    headers=[
+        f"{method} {uri} RTSP/1.0",
+        f"CSeq: {cseq}",
+        "User-Agent: OpenHomeOS/14.2",
+        "Accept: application/sdp"
+    ]
+    if authorization:
+        headers.append(f"Authorization: {authorization}")
+    elif username:
+        token=base64.b64encode(f"{username}:{password}".encode()).decode()
+        headers.append(f"Authorization: Basic {token}")
+    request="\r\n".join(headers)+"\r\n\r\n"
+    sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    started=time.time()
+    try:
+        sock.connect((ip,int(port or 554)))
+        sock.sendall(request.encode())
+        chunks=[]
+        total=0
+        while total<65536:
+            try:
+                chunk=sock.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total+=len(chunk)
+            if b"\r\n\r\n" in b"".join(chunks) and total>1024:
+                break
+        parsed=parse_rtsp_response(b"".join(chunks))
+        parsed.update({"ok":True,"method":method,"path":path,"uri":uri,"elapsed_ms":round((time.time()-started)*1000)})
+        return parsed
+    except Exception as e:
+        return {"ok":False,"method":method,"path":path,"uri":uri,"error":str(e),"elapsed_ms":round((time.time()-started)*1000)}
+    finally:
+        try: sock.close()
+        except Exception: pass
+
+def rtsp_server_diagnostics(d):
+    ip=str(d.get("ip","")).strip()
+    if not ip:
+        return {"ok":False,"message":"IP obrigatório."}
+    port=int(d.get("port") or 554)
+    user=str(d.get("username",""))
+    password=str(d.get("password",""))
+    preset=str(d.get("preset","auto") or "auto").lower()
+    manual=str(d.get("path","")).strip()
+    paths=[manual] if manual else RTSP_PRESETS.get(preset,RTSP_COMMON_PATHS)
+    paths=list(dict.fromkeys(["/"]+paths[:12]))
+
+    results=[]
+    server_name=""
+    public_methods=[]
+    auth_scheme=""
+    auth_required=False
+    credentials_accepted=False
+    sdp_detected=False
+
+    for path in paths:
+        for method in ["OPTIONS","DESCRIBE"]:
+            r=rtsp_raw_request(ip,port,path,method,user,password,timeout=4)
+            results.append(r)
+            if not r.get("ok"):
+                continue
+            headers=r.get("headers",{})
+            if headers.get("server") and not server_name:
+                server_name=headers.get("server")
+            if headers.get("public"):
+                public_methods=[x.strip() for x in headers.get("public","").split(",") if x.strip()]
+            www=headers.get("www-authenticate","")
+            if www:
+                auth_required=True
+                auth_scheme=www.split(" ",1)[0]
+            status=r.get("status")
+            if status in [200,201]:
+                credentials_accepted=True
+            if "application/sdp" in headers.get("content-type","").lower() or "m=video" in (r.get("body") or ""):
+                sdp_detected=True
+                return {
+                    "ok":True,
+                    "rtsp_server":True,
+                    "server":server_name,
+                    "public_methods":public_methods,
+                    "auth_required":auth_required,
+                    "auth_scheme":auth_scheme,
+                    "credentials_accepted":credentials_accepted,
+                    "sdp_detected":True,
+                    "working_path":path,
+                    "message":"Servidor RTSP respondeu e forneceu descrição SDP.",
+                    "results":results
+                }
+
+    any_response=any(x.get("ok") and x.get("status") for x in results)
+    statuses=[x.get("status") for x in results if x.get("status")]
+    if 401 in statuses:
+        message="Servidor RTSP localizado, mas as credenciais foram recusadas."
+        code="unauthorized"
+    elif 461 in statuses:
+        message="Servidor RTSP localizado, mas recusou o transporte solicitado."
+        code="unsupported_transport"
+    elif any_response:
+        message="Servidor RTSP respondeu, porém nenhum caminho forneceu vídeo SDP."
+        code="no_sdp"
+    else:
+        message="Não foi possível obter resposta RTSP válida."
+        code="no_response"
+
+    return {
+        "ok":False,
+        "error_code":code,
+        "rtsp_server":any_response,
+        "server":server_name,
+        "public_methods":public_methods,
+        "auth_required":auth_required,
+        "auth_scheme":auth_scheme,
+        "credentials_accepted":credentials_accepted,
+        "sdp_detected":sdp_detected,
+        "message":message,
+        "results":results
+    }
+
+def camera_full_diagnostic(d):
+    device=d.get("device",d)
+    caps=camera_capabilities(device)
+    ip=str(device.get("ip") or d.get("ip") or "").strip()
+    ports=sorted(set(device.get("ports") or []))
+    if not ports and ip:
+        ports=scan_ports(ip,[22,80,81,443,554,8554,5000,8000,8080,8899])
+    payload={
+        "ip":ip,
+        "port":d.get("port",554),
+        "preset":d.get("preset","auto"),
+        "username":d.get("username",""),
+        "password":d.get("password",""),
+        "path":d.get("path","")
+    }
+    rtsp=rtsp_server_diagnostics(payload) if (554 in ports or not ports) else {"ok":False,"skipped":True,"message":"Porta 554 não detectada."}
+    onvif=onvif_probe({**payload,"onvif_ports":[80,5000,8000,8080,8899]})
+    recommendation=[]
+    if caps.get("profile") and caps["profile"].get("id")=="xiaomi_xiaofang" and caps.get("firmware_mode")=="original_limited":
+        recommendation.append("Firmware original Xiaomi detectado: RTSP/ONVIF podem não estar disponíveis.")
+    if rtsp.get("error_code")=="unauthorized":
+        recommendation.append("Revise o usuário e a senha NVR/RTSP configurados no aplicativo da câmera.")
+    if rtsp.get("error_code")=="unsupported_transport":
+        recommendation.append("O servidor RTSP respondeu, mas usa comportamento incompatível com os transportes testados.")
+    if rtsp.get("error_code")=="no_sdp":
+        recommendation.append("A porta RTSP existe, porém o caminho de vídeo ainda não foi identificado.")
+    if not onvif.get("ok"):
+        recommendation.append("ONVIF não foi confirmado.")
+    if rtsp.get("ok"):
+        recommendation.append("RTSP pronto para configuração.")
+    return {
+        "ok":True,
+        "device":device,
+        "ports":ports,
+        "capabilities":caps,
+        "rtsp":rtsp,
+        "onvif":onvif,
+        "recommendations":recommendation
+    }
+
 def ffprobe_rtsp(url,timeout=7,transport="tcp"):
     cmd=["ffprobe","-v","error"]
     if transport in ["tcp","udp"]:
@@ -736,6 +931,11 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/cameras/analyze":
             dev=d.get("device",d)
             return self.js({"ok":True,"device":dev,"capabilities":camera_capabilities(dev)})
+        if u.path=="/api/cameras/rtsp/diagnose":
+            return self.js(rtsp_server_diagnostics(d))
+        if u.path=="/api/cameras/full-diagnostic":
+            return self.js(camera_full_diagnostic(d))
+
         if u.path=="/api/cameras/delete":
             cid=d.get("id")
             save(CAMERAS,[x for x in load(CAMERAS,[]) if x.get("id")!=cid])

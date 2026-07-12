@@ -325,6 +325,63 @@ function cameraPayload(){
     path:el("cam-path")?.value||""
   };
 }
+function renderRecommendations(items=[]){
+  const box=el("camera-recommendations");
+  if(!box) return;
+  box.innerHTML=items.length
+    ? `<h4>Próximos passos</h4>${items.map(x=>`<p>• ${x}</p>`).join("")}`
+    : "";
+}
+
+async function runRTSPDiagnostic(){
+  const status=el("camera-test-status");
+  const progress=el("camera-test-progress");
+  if(status){
+    status.className="camera-test-status testing";
+    status.innerHTML="<strong>Diagnóstico RTSP</strong><span>Consultando OPTIONS e DESCRIBE diretamente no servidor da câmera...</span>";
+  }
+  if(progress) progress.classList.remove("hidden");
+  renderRecommendations([]);
+
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/rtsp/diagnose",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(cameraPayload())
+    });
+    if(progress) progress.classList.add("hidden");
+
+    if(status){
+      status.className="camera-test-status "+(r.ok?"success":"error");
+      status.innerHTML=`<strong>${r.ok?"Servidor RTSP identificado":"Diagnóstico concluído"}</strong><span>${r.message||""}</span>`;
+    }
+
+    const summary=el("camera-test-summary");
+    if(summary){
+      summary.innerHTML=`<div class="result-grid">
+        <span>Servidor<b>${r.server||"não informado"}</b></span>
+        <span>Autenticação<b>${r.auth_scheme|| (r.auth_required?"necessária":"não informada")}</b></span>
+        <span>Credenciais<b>${r.credentials_accepted?"aceitas":"não confirmadas"}</b></span>
+        <span>SDP<b>${r.sdp_detected?"encontrado":"não encontrado"}</b></span>
+      </div>`;
+    }
+
+    const rec=[];
+    if(r.error_code==="unauthorized") rec.push("Confirme o usuário e a senha NVR/RTSP definidos no aplicativo.");
+    if(r.error_code==="unsupported_transport") rec.push("A câmera respondeu, mas recusou o transporte solicitado.");
+    if(r.error_code==="no_sdp") rec.push("O servidor respondeu, porém ainda precisamos localizar o caminho de vídeo.");
+    if(r.ok) rec.push("Agora execute o Teste rápido para validar codec e resolução.");
+    renderRecommendations(rec);
+    setText("camera-test-result",JSON.stringify(r,null,2));
+  }catch(e){
+    if(progress) progress.classList.add("hidden");
+    if(status){
+      status.className="camera-test-status error";
+      status.innerHTML=`<strong>Erro no diagnóstico</strong><span>${e.message}</span>`;
+    }
+  }
+}
+
 async function probeCameraONVIF(){
   setText("camera-test-result","Procurando serviço ONVIF...");
   try{
@@ -445,8 +502,26 @@ if(document.readyState==="loading"){
 async function analyzeCamera(index){
   const dev=currentFilteredNetwork()[index];
   if(!dev) return;
-  const r=await safeJson(apiBase()+"/api/cameras/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({device:dev})});
-  alert(JSON.stringify(r.capabilities,null,2));
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/full-diagnostic",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({device:dev,preset:"auto"})
+    });
+    const caps=r.capabilities||{};
+    const profile=caps.profile?.name||"Não identificado";
+    const lines=[
+      `Perfil: ${profile}`,
+      `Confiança: ${caps.profile_confidence||0}%`,
+      `Portas: ${(r.ports||[]).join(", ")||"nenhuma"}`,
+      `RTSP: ${r.rtsp?.ok?"pronto":r.rtsp?.message||"não confirmado"}`,
+      `ONVIF: ${r.onvif?.ok?"localizado":"não confirmado"}`
+    ];
+    if(r.recommendations?.length) lines.push("",...r.recommendations.map(x=>"• "+x));
+    alert(lines.join("\n"));
+  }catch(e){
+    toast("Falha no diagnóstico: "+e.message);
+  }
 }
 
 async function loadCameraManager(){
