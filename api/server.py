@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.6.2 Dashboard Camera Refresh"
-BUILD="001462"
+VERSION="Open Home OS v14.6.3 Dashboard Image Fix"
+BUILD="001463"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -771,7 +771,17 @@ def camera_snapshot(camera):
     cmd=["ffmpeg","-hide_banner","-loglevel","error"]
     if transport in ["tcp","udp"]:
         cmd += ["-rtsp_transport",transport]
-    cmd += ["-i",url,"-frames:v","1","-f","image2pipe","-vcodec","mjpeg","-"]
+    cmd += [
+        "-analyzeduration","3000000",
+        "-probesize","3000000",
+        "-i",url,
+        "-an","-sn","-dn",
+        "-frames:v","1",
+        "-q:v","5",
+        "-f","image2pipe",
+        "-vcodec","mjpeg",
+        "-"
+    ]
     try:
         p=subprocess.run(cmd,capture_output=True,timeout=12)
         if p.returncode==0 and p.stdout:

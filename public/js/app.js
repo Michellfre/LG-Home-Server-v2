@@ -716,11 +716,8 @@ async function refreshDashboardCamera(id,force=false){
   try{
     const r=await fetchCameraSnapshot(id);
     if(r.ok && r.data && img){
-      await new Promise((resolve,reject)=>{
-        img.onload=resolve;
-        img.onerror=reject;
-        img.src=`data:${r.mime||"image/jpeg"};base64,${r.data}#${Date.now()}`;
-      });
+      const dataUrl=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
+      img.src=dataUrl;
       img.style.display="block";
       if(placeholder) placeholder.style.display="none";
       if(card){
@@ -737,9 +734,10 @@ async function refreshDashboardCamera(id,force=false){
   }catch(e){
     if(placeholder){
       placeholder.style.display="block";
-      placeholder.textContent="Falha ao atualizar";
+      placeholder.textContent=e?.message||"Falha ao atualizar";
     }
     if(card) card.classList.add("camera-offline");
+    console.error("Snapshot da câmera",id,e);
   }finally{
     if(card) card.classList.remove("camera-refreshing");
   }
