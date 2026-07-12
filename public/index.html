@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1450"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.5 Cameras Live</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1460"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.6 Vídeo ao Vivo</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v13.5 com correção JavaScript e Discovery PRO.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
@@ -60,7 +60,7 @@
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1450"></script>
+<div id="toast"></div><script src="js/app.js?v=1460"></script>
 <div id="camera-live-modal" class="camera-live-modal hidden" onclick="closeCameraLive(event)">
   <div class="camera-live-window" onclick="event.stopPropagation()">
     <div class="camera-live-header">
@@ -71,12 +71,12 @@
       <button class="camera-live-close" onclick="closeCameraLive()">×</button>
     </div>
     <div class="camera-live-stage">
-      <img id="camera-live-image" alt="Visualização da câmera">
+      <img id="camera-live-image" alt="Vídeo ao vivo da câmera">
       <div id="camera-live-loading">Conectando à câmera...</div>
     </div>
     <div class="camera-live-actions">
       <span id="camera-live-status">● Aguardando</span>
-      <button onclick="captureLiveFrame()">Atualizar agora</button>
+      <button onclick="restartCameraLive()">Reconectar</button>
       <button onclick="toggleCameraLive()">Pausar/Continuar</button>
       <button onclick="cameraLiveFullscreen()">Tela cheia</button>
     </div>

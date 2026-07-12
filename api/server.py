@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading, urllib.parse, base64, re
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.5 Dashboard Cameras Live"
-BUILD="001450"
+VERSION="Open Home OS v14.6 Live Video MJPEG"
+BUILD="001460"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -1051,6 +1051,55 @@ def jarvis(cmd):
     j=load(JARVIS,{"history":[]}); j.setdefault("history",[]).insert(0,{"command":cmd,"reply":reply,"action":action,"time":now()}); j["history"]=j["history"][:100]; save(JARVIS,j); ev("jarvis",cmd,"info","jarvis")
     return {"ok":True,"reply":reply,"action":action}
 
+
+LIVE_CLIENTS={}
+LIVE_LOCK=threading.Lock()
+
+def find_camera(camera_id):
+    return next((x for x in load(CAMERAS,[]) if str(x.get("id"))==str(camera_id)),None)
+
+def camera_mjpeg_command(camera,fps=6,width=640):
+    ip=str(camera.get("ip","")).strip()
+    port=int(camera.get("port") or 554)
+    path=str(camera.get("path","")).strip()
+    user=str(camera.get("username",""))
+    password=str(camera.get("password",""))
+    transport=str(camera.get("transport","udp") or "udp").lower()
+    if not ip or not path:
+        return None
+
+    url=rtsp_url(ip,port,path,user,password)
+    cmd=["ffmpeg","-hide_banner","-loglevel","error"]
+    if transport in ["tcp","udp"]:
+        cmd += ["-rtsp_transport",transport]
+    cmd += [
+        "-i",url,
+        "-an","-sn","-dn",
+        "-vf",f"fps={max(1,min(12,int(fps)))},scale={int(width)}:-2",
+        "-q:v","6",
+        "-f","mjpeg",
+        "pipe:1"
+    ]
+    return cmd
+
+def iter_jpeg_frames(stream):
+    buffer=b""
+    while True:
+        chunk=stream.read(8192)
+        if not chunk:
+            break
+        buffer+=chunk
+        while True:
+            start=buffer.find(b"\xff\xd8")
+            end=buffer.find(b"\xff\xd9",start+2) if start>=0 else -1
+            if start<0 or end<0:
+                if len(buffer)>4_000_000:
+                    buffer=buffer[-1_000_000:]
+                break
+            frame=buffer[start:end+2]
+            buffer=buffer[end+2:]
+            yield frame
+
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): return
     def js(self,d,c=200):
@@ -1061,9 +1110,76 @@ class H(BaseHTTPRequestHandler):
     def body(self):
         try: return json.loads(self.rfile.read(int(self.headers.get("Content-Length","0"))).decode("utf-8","ignore"))
         except Exception: return {}
+    def mjpeg(self,camera_id,fps=6,width=640):
+        camera=find_camera(camera_id)
+        if not camera:
+            return self.js({"ok":False,"message":"Câmera não encontrada."},404)
+
+        cmd=camera_mjpeg_command(camera,fps,width)
+        if not cmd:
+            return self.js({"ok":False,"message":"Configuração RTSP incompleta."},400)
+
+        process=None
+        try:
+            process=subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0
+            )
+            self.send_response(200)
+            self.send_header("Content-Type","multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control","no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma","no-cache")
+            self.send_header("Connection","close")
+            self.send_header("Access-Control-Allow-Origin","*")
+            self.end_headers()
+
+            with LIVE_LOCK:
+                LIVE_CLIENTS[camera_id]=LIVE_CLIENTS.get(camera_id,0)+1
+
+            for frame in iter_jpeg_frames(process.stdout):
+                try:
+                    self.wfile.write(b"--frame\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                    self.wfile.write(f"Content-Length: {len(frame)}\r\n\r\n".encode())
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                except (BrokenPipeError,ConnectionResetError):
+                    break
+        except FileNotFoundError:
+            if not self.wfile.closed:
+                try: self.js({"ok":False,"message":"ffmpeg não instalado."},500)
+                except Exception: pass
+        except Exception:
+            pass
+        finally:
+            with LIVE_LOCK:
+                if camera_id in LIVE_CLIENTS:
+                    LIVE_CLIENTS[camera_id]=max(0,LIVE_CLIENTS[camera_id]-1)
+                    if LIVE_CLIENTS[camera_id]==0:
+                        LIVE_CLIENTS.pop(camera_id,None)
+            if process:
+                try: process.terminate()
+                except Exception: pass
+                try: process.wait(timeout=2)
+                except Exception:
+                    try: process.kill()
+                    except Exception: pass
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
+        q=urllib.parse.parse_qs(u.query)
+        if u.path=="/api/cameras/live.mjpeg":
+            camera_id=(q.get("id") or [""])[0]
+            try: fps=int((q.get("fps") or ["6"])[0])
+            except Exception: fps=6
+            try: width=int((q.get("width") or ["640"])[0])
+            except Exception: width=640
+            return self.mjpeg(camera_id,fps,width)
+        if u.path=="/api/cameras/live/status":
+            return self.js({"ok":True,"clients":LIVE_CLIENTS})
         routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/cameras/learned":lambda:{"items":list(learned_camera_profiles().values())},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
@@ -1129,4 +1245,4 @@ class H(BaseHTTPRequestHandler):
 
 ev("server_start",VERSION,"success","core")
 print(f"{VERSION} API rodando na porta 8090")
-HTTPServer(("0.0.0.0",8090),H).serve_forever()
+ThreadingHTTPServer(("0.0.0.0",8090),H).serve_forever()

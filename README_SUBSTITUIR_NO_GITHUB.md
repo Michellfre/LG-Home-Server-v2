@@ -1,28 +1,26 @@
-# Open Home OS v14.5 — Dashboard Cameras Live
+# Open Home OS v14.6 — Vídeo ao Vivo MJPEG
 
-Substitua no GitHub:
+Esta versão troca a sequência de snapshots por uma transmissão MJPEG contínua.
+
+## Arquivos para substituir
 
 - `api/server.py`
 - `public/index.html`
 - `public/css/style.css`
 - `public/js/app.js`
 
-## Novidades
+## O que foi adicionado
 
-- miniaturas das câmeras adicionadas no Dashboard;
-- atualização automática das miniaturas;
-- botão “Ver ao vivo”;
-- janela ampliada da câmera;
-- atualização contínua de frames compatível com Brave;
+- endpoint `/api/cameras/live.mjpeg`;
+- vídeo contínuo no Brave sem abrir RTSP diretamente;
+- FFmpeg converte RTSP para MJPEG;
+- transporte salvo da câmera, como `/onvif2` via UDP;
+- reconexão;
 - pausar/continuar;
 - tela cheia;
-- botão para atualizar todas as miniaturas.
+- servidor HTTP multithread para o vídeo não bloquear a API.
 
-> O modo ao vivo desta versão usa quadros JPEG sucessivos.
-> Isso funciona no navegador sem abrir RTSP diretamente.
-> Uma versão futura poderá usar HLS/WebRTC para vídeo mais fluido.
-
-## Atualização
+## Atualização no Termux
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -35,3 +33,9 @@ bash scripts/start_api.sh
 ```
 
 No Brave, pressione `Ctrl + F5`.
+
+## Uso
+
+1. Abra o Dashboard ou a página Câmeras.
+2. Clique em **Ver ao vivo**.
+3. Use **Reconectar** caso a câmera perca a conexão.
