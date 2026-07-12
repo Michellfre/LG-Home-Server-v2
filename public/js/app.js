@@ -194,7 +194,15 @@ function filteredNetwork(items){
 
 function renderNetwork(items){
   const filtered=filteredNetwork(items||[]);
-  setHTML("network-list",filtered.length?filtered.map((x,i)=>`<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.ip}</p><span class="device-type">${x.type}</span><br><small>${x.vendor||"Fabricante não identificado"}<br>Confiança ${x.confidence||0}%<br>Portas: ${(x.ports||[]).join(", ")||"--"}<br>Serviços: ${(x.services||[]).join(", ")||"--"}</small><br><button class="ok" onclick="importDiscovered(${i})">Adicionar ao Open Home</button>${(x.ports||[]).some(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))?`<button class="ghost" onclick="openDevice('${x.ip}',${(x.ports||[]).find(p=>[80,81,443,8080,8090,8123,5000,5001].includes(p))})">Abrir interface</button>`:""}</div>`).join(""):"<p>Nenhum dispositivo encontrado para esse filtro.</p>");
+  setHTML("network-list",filtered.length?filtered.map((x,i)=>{
+    const isCamera=x.type==="camera"||(x.ports||[]).includes(554);
+    const webPort=(x.ports||[]).find(p=>[80,81,443,8080,8090,8123].includes(p));
+    const primary=isCamera
+      ? `<button class="ok" onclick="openCameraSetup(${i})">📹 Configurar câmera RTSP</button>`
+      : `<button class="ok" onclick="importDiscovered(${i})">Adicionar ao Open Home</button>`;
+    const webButton=webPort?`<button class="ghost" onclick="openDevice('${x.ip}',${webPort})">Abrir interface Web</button>`:"";
+    return `<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.ip}</p><span class="device-type">${x.type}</span><br><small>${x.vendor||"Fabricante não identificado"}<br>Confiança ${x.confidence||0}%<br>Portas: ${(x.ports||[]).join(", ")||"--"}<br>Serviços: ${(x.services||[]).join(", ")||"--"}</small><br>${primary}${webButton}</div>`;
+  }).join(""):"<p>Nenhum dispositivo encontrado para esse filtro.</p>");
 }
 
 function openDevice(ip,port){
@@ -253,6 +261,61 @@ async function loadNotifications(){
 async function clearNotifications(){
   await fetch(apiBase()+"/api/notifications/clear",{method:"POST"});
   loadNotifications(); loadNotifyCount();
+}
+
+function currentFilteredNetwork(){
+  return filteredNetwork(lastNetworkDevices||[]);
+}
+function openCameraSetup(index){
+  const dev=currentFilteredNetwork()[index];
+  if(!dev) return;
+  el("cam-name").value=dev.name==="Câmera RTSP"?`Câmera ${dev.ip}`:dev.name;
+  el("cam-room").value="Garagem";
+  el("cam-ip").value=dev.ip||"";
+  el("cam-port").value=(dev.ports||[]).includes(554)?554:554;
+  el("cam-user").value="";
+  el("cam-password").value="";
+  el("cam-path").value="";
+  setText("camera-device-info",`${dev.ip} • Portas ${(dev.ports||[]).join(", ")} • ${dev.vendor||"fabricante não identificado"}`);
+  setText("camera-test-result","Aguardando teste...");
+  el("camera-modal").classList.remove("hidden");
+}
+function closeCameraModal(){
+  el("camera-modal")?.classList.add("hidden");
+}
+function cameraPayload(){
+  return {
+    name:el("cam-name")?.value||"",
+    room:el("cam-room")?.value||"Sem ambiente",
+    ip:el("cam-ip")?.value||"",
+    port:Number(el("cam-port")?.value||554),
+    username:el("cam-user")?.value||"",
+    password:el("cam-password")?.value||"",
+    path:el("cam-path")?.value||""
+  };
+}
+async function testCameraRTSP(){
+  setText("camera-test-result","Testando RTSP. Aguarde...");
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/rtsp/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cameraPayload())});
+    setText("camera-test-result",JSON.stringify(r,null,2));
+    toast(r.ok?"Vídeo RTSP validado":"Stream não validado");
+  }catch(e){
+    setText("camera-test-result","Erro: "+e.message);
+  }
+}
+async function saveCameraRTSP(){
+  setText("camera-test-result","Testando e adicionando...");
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/rtsp/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cameraPayload())});
+    setText("camera-test-result",JSON.stringify(r,null,2));
+    if(r.ok){
+      toast("Câmera adicionada com sucesso");
+      setTimeout(()=>{closeCameraModal();showPage("connect");},900);
+    }else toast(r.message||"Não foi possível adicionar");
+  }catch(e){
+    setText("camera-test-result","Erro: "+e.message);
+  }
 }
 
 loadStatus();

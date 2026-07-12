@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading
+import json, subprocess, time, uuid, zipfile, hmac, hashlib, urllib.request, socket, ipaddress, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v13.4 Discovery PRO Fix"
-BUILD="000300"
+VERSION="Open Home OS v13.5 RTSP Camera Setup"
+BUILD="000340"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -321,6 +321,99 @@ def tuya_sync():
     cfg["last_sync"]=now(); save(TUYA_CFG,cfg); ev("tuya_sync",f"{len(norm)} dispositivos sincronizados","success","connect")
     return {"ok":True,"count":len(norm),"devices":norm,"raw":last}
 
+
+RTSP_COMMON_PATHS=[
+    "/stream1","/stream2","/live/ch00_0","/live/ch00_1","/live/ch0",
+    "/cam/realmonitor?channel=1&subtype=0","/cam/realmonitor?channel=1&subtype=1",
+    "/h264","/11","/12","/onvif1","/videoMain","/videoSub",
+    "/Streaming/Channels/101","/Streaming/Channels/102"
+]
+
+def rtsp_url(ip,port,path,user="",password=""):
+    path=(path or "/stream1").strip()
+    if not path.startswith("/"):
+        path="/"+path
+    auth=""
+    if user:
+        auth=urllib.parse.quote(str(user),safe="")+"@"
+        if password:
+            auth=urllib.parse.quote(str(user),safe="")+":"+urllib.parse.quote(str(password),safe="")+"@"
+    return f"rtsp://{auth}{ip}:{int(port or 554)}{path}"
+
+def ffprobe_rtsp(url,timeout=7):
+    cmd=["ffprobe","-v","error","-rtsp_transport","tcp","-show_entries",
+         "stream=codec_name,width,height,r_frame_rate","-of","json",url]
+    try:
+        p=subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
+        if p.returncode==0:
+            data=json.loads(p.stdout or "{}")
+            streams=data.get("streams",[])
+            video=next((x for x in streams if x.get("width") or x.get("codec_name")),streams[0] if streams else {})
+            return {"ok":True,"stream":video,"message":"Stream RTSP validado."}
+        err=(p.stderr or "Falha ao abrir o stream.").strip()[-500:]
+        return {"ok":False,"message":err}
+    except FileNotFoundError:
+        return {"ok":False,"message":"ffprobe não instalado. Execute: pkg install ffmpeg"}
+    except subprocess.TimeoutExpired:
+        return {"ok":False,"message":"Tempo esgotado ao testar o stream."}
+    except Exception as e:
+        return {"ok":False,"message":str(e)}
+
+def test_rtsp_config(d):
+    ip=str(d.get("ip","")).strip()
+    if not ip:
+        return {"ok":False,"message":"IP obrigatório."}
+    port=int(d.get("port") or 554)
+    user=str(d.get("username",""))
+    password=str(d.get("password",""))
+    manual=str(d.get("path","")).strip()
+    paths=[manual] if manual else RTSP_COMMON_PATHS
+    attempts=[]
+    for path in paths:
+        url=rtsp_url(ip,port,path,user,password)
+        result=ffprobe_rtsp(url)
+        attempts.append({"path":path,"ok":result.get("ok",False),"message":result.get("message","")})
+        if result.get("ok"):
+            return {"ok":True,"path":path,"stream":result.get("stream",{}),
+                    "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
+                    "attempts":attempts}
+    return {"ok":False,"message":"Nenhum caminho RTSP respondeu com as credenciais fornecidas.","attempts":attempts}
+
+def add_rtsp_camera(d):
+    tested=test_rtsp_config(d)
+    if not tested.get("ok"):
+        return tested
+    cams=load(CAMERAS,[])
+    ip=str(d.get("ip","")).strip()
+    cid="cam_"+ip.replace(".","_")+"_"+str(int(d.get("port") or 554))
+    cam={
+        "id":cid,
+        "name":str(d.get("name") or f"Câmera {ip}"),
+        "room":str(d.get("room") or "Sem ambiente"),
+        "type":"rtsp",
+        "ip":ip,
+        "port":int(d.get("port") or 554),
+        "username":str(d.get("username","")),
+        "password":str(d.get("password","")),
+        "path":tested.get("path"),
+        "verified":True,
+        "status":"online",
+        "stream":tested.get("stream",{}),
+        "updated":now()
+    }
+    by={x.get("id"):x for x in cams}
+    by[cid]=cam
+    save(CAMERAS,list(by.values()))
+    merge_devices([{
+        "id":cid,"source":"camera","name":cam["name"],"room":cam["room"],
+        "type":"camera","online":True,"ip":ip,"ports":[cam["port"]],
+        "services":["RTSP"],"verified":True,"updated":now()
+    }])
+    ev("camera_add",f"{cam['name']} configurada e validada","success","camera")
+    public=dict(cam)
+    public["password"]="***" if cam["password"] else ""
+    return {"ok":True,"camera":public,"message":"Câmera adicionada e validada."}
+
 def cam_counts():
     cams=load(CAMERAS,[])
     return {"registered":len(cams),"online":len([c for c in cams if c.get("verified") and c.get("status")=="online"]),"pending":len([c for c in cams if not c.get("verified")]),"offline":len([c for c in cams if c.get("status")=="offline"])}
@@ -384,7 +477,7 @@ class H(BaseHTTPRequestHandler):
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
-        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":load(CAMERAS,[])},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
+        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
     def do_POST(self):
@@ -412,6 +505,16 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/connect/tuya/test":
             cfg=load(TUYA_CFG,{}); cfg.update(d); save(TUYA_CFG,cfg); token=tuya_token(); return self.js({"ok":bool(token),"message":"Conectado à Tuya Cloud" if token else "Falha ao conectar à Tuya Cloud"})
         if u.path=="/api/connect/tuya/sync": return self.js(tuya_sync())
+        if u.path=="/api/cameras/rtsp/test":
+            return self.js(test_rtsp_config(d))
+        if u.path=="/api/cameras/rtsp/add":
+            return self.js(add_rtsp_camera(d))
+        if u.path=="/api/cameras/delete":
+            cid=d.get("id")
+            save(CAMERAS,[x for x in load(CAMERAS,[]) if x.get("id")!=cid])
+            save(DEVICES,[x for x in load(DEVICES,[]) if x.get("id")!=cid])
+            ev("camera_delete",f"Câmera {cid} excluída","info","camera")
+            return self.js({"ok":True})
         if u.path=="/api/backup": return self.js({"ok":True,"file":backup()})
         if u.path=="/api/notifications/clear": save(NOTES,[]); return self.js({"ok":True})
         self.js({"error":"rota não encontrada"},404)
