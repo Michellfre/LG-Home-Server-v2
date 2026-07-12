@@ -1,5 +1,5 @@
 {
-  "version": "14.0",
+  "version": "14.1",
   "profiles": [
     {
       "id": "yoosee",
@@ -21,7 +21,19 @@
         "/stream1",
         "/stream2",
         "/11",
-        "/12"
+        "/12",
+        "/live/0/MAIN",
+        "/live/0/SUB",
+        "/live/main",
+        "/live/sub",
+        "/main",
+        "/sub",
+        "/media/video1",
+        "/media/video2",
+        "/av0_0",
+        "/av0_1",
+        "/ch0_0.h264",
+        "/ch0_1.h264"
       ],
       "onvif_ports": [
         80,
@@ -30,7 +42,12 @@
         8080,
         8899
       ],
-      "notes": "Use a senha NVR/RTSP definida no aplicativo."
+      "notes": "Use a senha NVR/RTSP do app. O Camera Manager testa TCP, UDP e modo automático.",
+      "transports": [
+        "tcp",
+        "udp",
+        "auto"
+      ]
     },
     {
       "id": "xiaomi_xiaofang",

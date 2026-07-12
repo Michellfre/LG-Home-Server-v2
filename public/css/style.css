@@ -93,3 +93,70 @@ header{
 
 /* v13.6 */
 .camera-form select{width:100%;margin:7px 0 0;background:#020617;color:#fff;border:1px solid #334155;border-radius:10px;padding:10px}
+
+
+/* v14.1 Camera Manager Pro */
+.camera-test-status{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  margin-top:18px;
+  padding:16px 18px;
+  border-radius:16px;
+  border:1px solid #475569;
+  background:#0f172a;
+}
+.camera-test-status strong{font-size:18px}
+.camera-test-status span{color:#cbd5e1}
+.camera-test-status.success{border-color:#22c55e;background:rgba(20,83,45,.35)}
+.camera-test-status.error{border-color:#ef4444;background:rgba(127,29,29,.28)}
+.camera-test-status.testing{border-color:#38bdf8;background:rgba(12,74,110,.3)}
+.camera-progress{
+  height:8px;
+  margin:12px 0;
+  overflow:hidden;
+  border-radius:999px;
+  background:#1e293b;
+}
+.camera-progress.hidden{display:none}
+.camera-progress div{
+  width:38%;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#38bdf8,#22c55e);
+  animation:camera-loading 1.2s linear infinite;
+}
+@keyframes camera-loading{
+  from{transform:translateX(-120%)}
+  to{transform:translateX(300%)}
+}
+.camera-summary{margin:12px 0}
+.result-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.result-grid span{
+  padding:12px;
+  border-radius:12px;
+  background:#0f172a;
+  color:#94a3b8;
+}
+.result-grid b{
+  display:block;
+  margin-top:5px;
+  color:#f8fafc;
+  word-break:break-word;
+}
+.camera-debug{
+  margin-top:12px;
+  border:1px solid #334155;
+  border-radius:14px;
+  padding:10px 14px;
+  background:#020617;
+}
+.camera-debug summary{cursor:pointer;font-weight:700}
+.camera-debug pre{max-height:320px;overflow:auto;white-space:pre-wrap}
+@media(max-width:760px){
+  .result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

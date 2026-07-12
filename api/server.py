@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.0 Camera Manager"
-BUILD="001400"
+VERSION="Open Home OS v14.1 Camera Manager Pro"
+BUILD="001410"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -392,89 +392,144 @@ def rtsp_url(ip,port,path,user="",password=""):
             auth=urllib.parse.quote(str(user),safe="")+":"+urllib.parse.quote(str(password),safe="")+"@"
     return f"rtsp://{auth}{ip}:{int(port or 554)}{path}"
 
-def ffprobe_rtsp(url,timeout=7):
-    cmd=["ffprobe","-v","error","-rtsp_transport","tcp","-show_entries",
-         "stream=codec_name,width,height,r_frame_rate","-of","json",url]
+def ffprobe_rtsp(url,timeout=7,transport="tcp"):
+    cmd=["ffprobe","-v","error"]
+    if transport in ["tcp","udp"]:
+        cmd += ["-rtsp_transport",transport]
+    cmd += [
+        "-analyzeduration","3000000",
+        "-probesize","3000000",
+        "-show_entries","stream=index,codec_type,codec_name,width,height,r_frame_rate",
+        "-of","json",url
+    ]
     try:
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
         if p.returncode==0:
             data=json.loads(p.stdout or "{}")
             streams=data.get("streams",[])
-            video=next((x for x in streams if x.get("width") or x.get("codec_name")),streams[0] if streams else {})
-            return {"ok":True,"stream":video,"message":"Stream RTSP validado."}
-        err=(p.stderr or "Falha ao abrir o stream.").strip()[-500:]
-        return {"ok":False,"message":err}
+            video=next((x for x in streams if x.get("codec_type")=="video"), streams[0] if streams else {})
+            if streams:
+                return {
+                    "ok":True,
+                    "transport":transport,
+                    "stream":video,
+                    "streams":streams,
+                    "message":"Stream RTSP validado."
+                }
+            return {"ok":False,"transport":transport,"message":"Conexão aceita, mas nenhum stream de mídia foi identificado."}
+        err=(p.stderr or "Falha ao abrir o stream.").strip()[-700:]
+        return {"ok":False,"transport":transport,"message":err}
     except FileNotFoundError:
-        return {"ok":False,"message":"ffprobe não instalado. Execute: pkg install ffmpeg"}
+        return {"ok":False,"transport":transport,"message":"ffprobe não instalado. Execute: pkg install ffmpeg"}
     except subprocess.TimeoutExpired:
-        return {"ok":False,"message":"Tempo esgotado ao testar o stream."}
+        return {"ok":False,"transport":transport,"message":"Tempo esgotado ao testar o stream."}
     except Exception as e:
-        return {"ok":False,"message":str(e)}
+        return {"ok":False,"transport":transport,"message":str(e)}
+
+def classify_rtsp_error(message):
+    text=(message or "").lower()
+    if "401" in text or "unauthorized" in text:
+        return "unauthorized"
+    if "nonmatching transport" in text or "461 unsupported transport" in text:
+        return "transport"
+    if "404" in text or "not found" in text:
+        return "path_not_found"
+    if "connection refused" in text:
+        return "connection_refused"
+    if "timed out" in text or "tempo esgotado" in text:
+        return "timeout"
+    if "invalid data found" in text:
+        return "invalid_stream"
+    return "unknown"
 
 def test_rtsp_config(d):
     ip=str(d.get("ip","")).strip()
     if not ip:
         return {"ok":False,"message":"IP obrigatório."}
+
     port=int(d.get("port") or 554)
     user=str(d.get("username",""))
     password=str(d.get("password",""))
     manual=str(d.get("path","")).strip()
     preset=str(d.get("preset","auto") or "auto").lower()
+    deep=bool(d.get("deep",False))
 
-    paths=[manual] if manual else RTSP_PRESETS.get(preset,RTSP_COMMON_PATHS)
-    # Preserve order but remove duplicates.
-    paths=list(dict.fromkeys(paths))
+    base_paths=[manual] if manual else RTSP_PRESETS.get(preset,RTSP_COMMON_PATHS)
+    paths=list(dict.fromkeys(base_paths))
 
+    if deep:
+        deep_paths=[
+            "/live/0/MAIN","/live/0/SUB","/live/1/MAIN","/live/1/SUB",
+            "/live/main","/live/sub","/main","/sub","/media/video1","/media/video2",
+            "/video1","/video2","/av0_0","/av0_1","/ch0_0.h264","/ch0_1.h264",
+            "/user=admin_password=_channel=1_stream=0.sdp",
+            "/user=admin_password=_channel=1_stream=1.sdp",
+            "/axis-media/media.amp","/mpeg4","/0","/1"
+        ]
+        paths=list(dict.fromkeys(paths+deep_paths))
+
+    transports=["tcp","udp","auto"]
     attempts=[]
-    unauthorized=0
-    connection_errors=0
+    counters={}
+    started=time.time()
 
     for path in paths:
         url=rtsp_url(ip,port,path,user,password)
-        result=ffprobe_rtsp(url)
-        msg=result.get("message","")
-        lower=msg.lower()
+        for transport in transports:
+            result=ffprobe_rtsp(url,timeout=8,transport=transport)
+            msg=result.get("message","")
+            kind=classify_rtsp_error(msg)
+            counters[kind]=counters.get(kind,0)+1
 
-        if "401" in lower or "unauthorized" in lower:
-            unauthorized+=1
-        elif "connection refused" in lower or "timed out" in lower or "tempo esgotado" in lower:
-            connection_errors+=1
-
-        attempts.append({
-            "path":path,
-            "ok":result.get("ok",False),
-            "message":msg
-        })
-
-        if result.get("ok"):
-            return {
-                "ok":True,
-                "preset":preset,
+            attempts.append({
                 "path":path,
-                "stream":result.get("stream",{}),
-                "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
-                "attempts":attempts
-            }
+                "transport":transport,
+                "ok":result.get("ok",False),
+                "error_type":kind,
+                "message":msg
+            })
 
-    if unauthorized:
-        message=(
-            "A câmera respondeu, mas recusou o usuário ou a senha RTSP "
-            f"em {unauthorized} tentativa(s). Confira a senha NVR/RTSP definida no aplicativo Yoosee "
-            "e o usuário exigido pelo firmware."
-        )
+            if result.get("ok"):
+                elapsed=round(time.time()-started,1)
+                return {
+                    "ok":True,
+                    "preset":preset,
+                    "deep":deep,
+                    "path":path,
+                    "transport":transport,
+                    "stream":result.get("stream",{}),
+                    "streams":result.get("streams",[]),
+                    "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
+                    "attempts_count":len(attempts),
+                    "elapsed_seconds":elapsed,
+                    "attempts":attempts
+                }
+
+    if counters.get("unauthorized",0):
+        message="A câmera respondeu, mas recusou o usuário ou a senha RTSP."
         error_code="unauthorized"
-    elif connection_errors==len(attempts) and attempts:
-        message="Não foi possível estabelecer conexão RTSP com a câmera."
+    elif counters.get("transport",0):
+        message="A câmera respondeu, mas não aceitou os transportes RTSP testados."
+        error_code="transport"
+    elif counters.get("connection_refused",0)==len(attempts) and attempts:
+        message="A porta RTSP recusou todas as conexões."
         error_code="connection"
+    elif counters.get("timeout",0)==len(attempts) and attempts:
+        message="A câmera não respondeu dentro do tempo esperado."
+        error_code="timeout"
     else:
-        message="Nenhum caminho RTSP respondeu com as credenciais fornecidas."
+        message="Nenhum caminho RTSP conhecido retornou vídeo válido."
         error_code="path_not_found"
 
     return {
         "ok":False,
         "error_code":error_code,
         "preset":preset,
+        "deep":deep,
         "message":message,
+        "attempts_count":len(attempts),
+        "elapsed_seconds":round(time.time()-started,1),
+        "summary":counters,
         "attempts":attempts
     }
 
@@ -562,6 +617,7 @@ def add_rtsp_camera(d):
         "username":str(d.get("username","")),
         "password":str(d.get("password","")),
         "path":tested.get("path"),
+        "transport":tested.get("transport","tcp"),
         "verified":True,
         "status":"online",
         "stream":tested.get("stream",{}),

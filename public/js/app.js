@@ -342,20 +342,65 @@ async function probeCameraONVIF(){
   }
 }
 
-async function testCameraRTSP(){
-  setText("camera-test-result","Testando RTSP. Aguarde...");
+function renderCameraTestResult(r){
+  const status=el("camera-test-status");
+  const summary=el("camera-test-summary");
+  const progress=el("camera-test-progress");
+
+  if(progress) progress.classList.add("hidden");
+  if(status){
+    status.className="camera-test-status "+(r.ok?"success":"error");
+    status.innerHTML=r.ok
+      ? `<strong>Vídeo encontrado</strong><span>${r.path} • ${String(r.transport||"auto").toUpperCase()} • ${r.stream?.codec_name||"codec desconhecido"} ${r.stream?.width?`• ${r.stream.width}×${r.stream.height}`:""}</span>`
+      : `<strong>Teste não concluído</strong><span>${r.message||"Não foi possível validar o stream."}</span>`;
+  }
+
+  if(summary){
+    summary.innerHTML=r.ok
+      ? `<div class="result-grid"><span>Caminho<b>${r.path}</b></span><span>Transporte<b>${r.transport||"--"}</b></span><span>Tentativas<b>${r.attempts_count||0}</b></span><span>Tempo<b>${r.elapsed_seconds||0}s</b></span></div>`
+      : `<div class="result-grid"><span>Resultado<b>${r.error_code||"falha"}</b></span><span>Tentativas<b>${r.attempts_count||0}</b></span><span>Tempo<b>${r.elapsed_seconds||0}s</b></span><span>Perfil<b>${r.preset||"--"}</b></span></div>`;
+  }
+
+  setText("camera-test-result",JSON.stringify(r,null,2));
+}
+
+async function testCameraRTSP(deep=false){
+  const status=el("camera-test-status");
+  const progress=el("camera-test-progress");
+  const summary=el("camera-test-summary");
+
+  if(status){
+    status.className="camera-test-status testing";
+    status.innerHTML=`<strong>${deep?"Busca profunda":"Teste rápido"} em andamento</strong><span>Testando caminhos RTSP por TCP, UDP e modo automático...</span>`;
+  }
+  if(progress) progress.classList.remove("hidden");
+  if(summary) summary.innerHTML="";
+
+  const payload=cameraPayload();
+  payload.deep=deep;
+
   try{
-    const r=await safeJson(apiBase()+"/api/cameras/rtsp/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cameraPayload())});
-    setText("camera-test-result",JSON.stringify(r,null,2));
+    const r=await safeJson(apiBase()+"/api/cameras/rtsp/test",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    renderCameraTestResult(r);
     toast(r.ok?"Vídeo RTSP validado":(r.error_code==="unauthorized"?"Usuário ou senha RTSP recusados":"Stream não validado"));
   }catch(e){
+    if(progress) progress.classList.add("hidden");
+    if(status){
+      status.className="camera-test-status error";
+      status.innerHTML=`<strong>Erro no teste</strong><span>${e.message}</span>`;
+    }
     setText("camera-test-result","Erro: "+e.message);
   }
 }
 async function saveCameraRTSP(){
   setText("camera-test-result","Testando e adicionando...");
   try{
-    const r=await safeJson(apiBase()+"/api/cameras/rtsp/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cameraPayload())});
+    const payload=cameraPayload(); payload.deep=true;
+    const r=await safeJson(apiBase()+"/api/cameras/rtsp/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     setText("camera-test-result",JSON.stringify(r,null,2));
     if(r.ok){
       toast("Câmera adicionada com sucesso");

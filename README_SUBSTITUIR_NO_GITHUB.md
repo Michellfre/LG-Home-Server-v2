@@ -1,15 +1,24 @@
-# Open Home OS v14.0 — Camera Manager
+# Open Home OS v14.1 — Camera Manager Pro
 
-Primeira etapa focada apenas nas câmeras.
+Substitua no GitHub:
 
-Arquivos:
-- api/server.py
-- public/index.html
-- public/css/style.css
-- public/js/app.js
-- config/camera_profiles.json
+- `api/server.py`
+- `public/index.html`
+- `public/css/style.css`
+- `public/js/app.js`
+- `config/camera_profiles.json`
 
-Instalação:
+## Melhorias
+
+- teste RTSP por TCP, UDP e modo automático;
+- teste rápido e busca profunda;
+- mais caminhos conhecidos para Yoosee;
+- classificação de erros de autenticação, transporte, conexão e caminho;
+- resultado visual amigável;
+- detalhes técnicos recolhidos em uma seção expansível;
+- salvamento do transporte que funcionou.
+
+## Atualização no Termux
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -20,4 +29,4 @@ nginx -s reload
 bash scripts/start_api.sh
 ```
 
-Depois use Ctrl + F5 no Brave.
+No Brave: `Ctrl + F5`.
