@@ -1,17 +1,25 @@
-# Open Home OS v14.6.1 — Camera Dashboard Hotfix
+# Open Home OS v14.6.2 — Dashboard Camera Refresh
 
-Esta correção resolve dois problemas da v14.6:
-
-- o Dashboard mostrava “Nenhuma câmera adicionada” mesmo com câmera cadastrada;
-- a página Câmeras não exibia o botão “Ver ao vivo”.
+Esta correção resolve a atualização das miniaturas e reduz o tamanho dos cartões no Dashboard.
 
 ## Arquivos para substituir
 
 - `api/server.py`
 - `public/index.html`
 - `public/js/app.js`
+- `public/css/style.css`
 
-## Atualização
+## Melhorias
+
+- botão “Atualizar todas” força uma nova leitura das câmeras;
+- cada miniatura usa uma captura nova, sem reutilizar imagem antiga;
+- atualização automática a cada 30 segundos;
+- atualização imediata ao abrir o Dashboard;
+- indicação visual de câmera online/offline;
+- cartões menores, com largura aproximada de 190–230 px;
+- botões compactos “Ao vivo” e “Atualizar”.
+
+## Atualização no Termux
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -22,9 +30,10 @@ pkill -f server.py
 bash scripts/start_api.sh
 ```
 
-No Brave, pressione `Ctrl + Shift + R` ou `Ctrl + F5`.
+No Brave:
 
-Depois:
-1. abra o Dashboard;
-2. clique em “Atualizar todas”;
-3. clique em “Ver ao vivo”.
+```text
+Ctrl + Shift + R
+```
+
+Depois abra o Dashboard e clique em **Atualizar todas**.

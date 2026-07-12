@@ -411,3 +411,74 @@ header{
   height:100%;
   object-fit:contain;
 }
+
+
+/* v14.6.2 compact dashboard camera thumbnails */
+.dashboard-camera-grid{
+  grid-template-columns:repeat(auto-fill,minmax(190px,230px));
+  justify-content:start;
+  gap:12px;
+}
+
+.dashboard-camera-card.compact{
+  width:100%;
+  max-width:230px;
+  border-radius:14px;
+}
+
+.dashboard-camera-preview.compact{
+  aspect-ratio:16/9;
+  min-height:0;
+  max-height:130px;
+}
+
+.dashboard-camera-info.compact{
+  padding:10px 11px 6px;
+}
+
+.dashboard-camera-info.compact h4{
+  font-size:15px;
+  margin-bottom:2px;
+}
+
+.dashboard-camera-info.compact small{
+  font-size:12px;
+}
+
+.dashboard-camera-buttons.compact{
+  padding:6px 10px 10px;
+  gap:6px;
+}
+
+.dashboard-camera-buttons.compact button{
+  padding:8px 10px;
+  font-size:12px;
+}
+
+.dashboard-camera-card.camera-refreshing{
+  opacity:.72;
+}
+
+.dashboard-camera-card.camera-offline .camera-online-dot{
+  color:#ef4444;
+}
+
+.dashboard-camera-card.camera-online .camera-online-dot{
+  color:#22c55e;
+}
+
+.camera-dashboard-loading{
+  color:#94a3b8;
+}
+
+@media(max-width:700px){
+  .dashboard-camera-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .dashboard-camera-card.compact{
+    max-width:none;
+  }
+  .dashboard-camera-preview.compact{
+    max-height:none;
+  }
+}
