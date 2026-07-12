@@ -22,14 +22,15 @@ function showPage(id){
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active-page"));
   const page = el(id); if(page) page.classList.add("active-page");
   document.querySelectorAll(".sidebar a").forEach(a=>a.classList.remove("active"));
-  const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,tv:6,system:7};
+  const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,cameras:6,tv:7,system:8};
   if(order[id]!=null && document.querySelectorAll(".sidebar a")[order[id]]) document.querySelectorAll(".sidebar a")[order[id]].classList.add("active");
-  setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
+  setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",cameras:"Camera Manager",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
   if(id==="connect") loadDevices();
   if(id==="rooms") loadRooms();
   if(id==="setup") loadTuyaConfig();
   if(id==="jarvis") loadJarvis();
   if(id==="network") loadNetwork();
+  if(id==="cameras") loadCameraManager();
   if(id==="system") diag();
   if(id==="notifications") loadNotifications();
   loadStatus();
@@ -198,7 +199,7 @@ function renderNetwork(items){
     const isCamera=x.type==="camera"||(x.ports||[]).includes(554);
     const webPort=(x.ports||[]).find(p=>[80,81,443,8080,8090,8123].includes(p));
     const primary=isCamera
-      ? `<button class="ok" onclick="openCameraSetup(${i})">📹 Configurar câmera RTSP</button>`
+      ? `<button class="ok" onclick="openCameraSetup(${i})">📹 Configurar câmera</button><button class="ghost" onclick="analyzeCamera(${i})">Diagnosticar</button>`
       : `<button class="ok" onclick="importDiscovered(${i})">Adicionar ao Open Home</button>`;
     const webButton=webPort?`<button class="ghost" onclick="openDevice('${x.ip}',${webPort})">Abrir interface Web</button>`:"";
     return `<div class="module"><h3>${icon(x.type)} ${x.name}</h3><p>${x.ip}</p><span class="device-type">${x.type}</span><br><small>${x.vendor||"Fabricante não identificado"}<br>Confiança ${x.confidence||0}%<br>Portas: ${(x.ports||[]).join(", ")||"--"}<br>Serviços: ${(x.services||[]).join(", ")||"--"}</small><br>${primary}${webButton}</div>`;
@@ -393,6 +394,27 @@ if(document.readyState==="loading"){
   document.addEventListener("DOMContentLoaded",installCameraModalHandlers);
 }else{
   installCameraModalHandlers();
+}
+
+
+async function analyzeCamera(index){
+  const dev=currentFilteredNetwork()[index];
+  if(!dev) return;
+  const r=await safeJson(apiBase()+"/api/cameras/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({device:dev})});
+  alert(JSON.stringify(r.capabilities,null,2));
+}
+
+async function loadCameraManager(){
+  const cams=await safeJson(apiBase()+"/api/cameras?"+Date.now());
+  const profiles=await safeJson(apiBase()+"/api/camera-profiles?"+Date.now());
+  setHTML("camera-manager-list",(cams.items||[]).map(c=>`<div class="module"><h3>📹 ${c.name||c.ip}</h3><p>${c.status||"desconhecido"}</p><small>IP ${c.ip||"--"}:${c.port||554}<br>${c.room||"Sem ambiente"}<br>Caminho ${c.path||"--"}</small><br><button class="danger" onclick="deleteCamera('${c.id}')">Excluir</button></div>`).join("")||"<p>Nenhuma câmera adicionada.</p>");
+  setHTML("camera-profile-list",(profiles.profiles||[]).map(p=>`<div class="module"><h3>${p.name}</h3><p>${(p.rtsp_paths||[]).length} caminhos RTSP</p><small>Portas: ${(p.ports||[]).join(", ")}<br>${p.notes||""}</small></div>`).join(""));
+}
+
+async function deleteCamera(id){
+  if(!confirm("Excluir esta câmera?")) return;
+  await safeJson(apiBase()+"/api/cameras/delete",{method:"POST",body:JSON.stringify({id})});
+  loadCameraManager(); loadStatus();
 }
 
 loadStatus();

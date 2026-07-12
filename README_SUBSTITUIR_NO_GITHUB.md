@@ -1,13 +1,15 @@
-# v13.6 Yoosee RTSP/ONVIF
+# Open Home OS v14.0 — Camera Manager
 
-Substitua no repositório:
+Primeira etapa focada apenas nas câmeras.
 
-- `api/server.py`
-- `public/index.html`
-- `public/css/style.css`
-- `public/js/app.js`
+Arquivos:
+- api/server.py
+- public/index.html
+- public/css/style.css
+- public/js/app.js
+- config/camera_profiles.json
 
-Depois execute no Termux:
+Instalação:
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -18,6 +20,4 @@ nginx -s reload
 bash scripts/start_api.sh
 ```
 
-No Brave: `Ctrl + F5`.
-
-Na câmera Yoosee, mantenha a conexão NVR/RTSP ativada e use a senha NVR/RTSP definida no aplicativo.
+Depois use Ctrl + F5 no Brave.

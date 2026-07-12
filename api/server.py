@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v13.6 Yoosee RTSP/ONVIF"
-BUILD="000360"
+VERSION="Open Home OS v14.0 Camera Manager"
+BUILD="001400"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -24,6 +24,7 @@ for p in [WEB,CONFIG,DATA,LOGS,*AREAS.values()]:
 
 SETTINGS=CONFIG/"settings.json"; CAMERAS=CONFIG/"cameras.json"; EVENTS=CONFIG/"events.json"; NOTES=CONFIG/"notifications.json"; JARVIS=CONFIG/"jarvis.json"
 DEVICES=CONFIG/"devices.json"; ROOMS=CONFIG/"rooms.json"; TUYA_CFG=CONFIG/"tuya_cloud.json"; TUYA_CACHE=CONFIG/"tuya_cache.json"; NETWORK=CONFIG/"network_devices.json"; DISCOVERY_STATE=CONFIG/"discovery_state.json"
+CAMERA_PROFILES=Path(__file__).resolve().parent.parent/"config"/"camera_profiles.json"
 
 def ensure(p,d):
     if not p.exists():
@@ -322,6 +323,39 @@ def tuya_sync():
     return {"ok":True,"count":len(norm),"devices":norm,"raw":last}
 
 
+
+def camera_profiles():
+    return load(CAMERA_PROFILES, {"version":"14.0","profiles":[]})
+
+def identify_camera_profile(device):
+    vendor=(device.get("vendor") or "").lower()
+    mac=(device.get("mac") or "").upper()
+    ports=set(device.get("ports") or [])
+    best=None; score_best=0
+    for p in camera_profiles().get("profiles",[]):
+        score=0
+        for prefix in p.get("mac_prefixes",[]):
+            if mac.startswith(prefix.upper()): score+=80
+        for name in p.get("vendors",[]):
+            if name.lower() in vendor: score+=60
+        score+=len(ports.intersection(set(p.get("ports",[]))))*5
+        if score>score_best:
+            best=p; score_best=score
+    return {"profile":best,"confidence":min(100,score_best)}
+
+def camera_capabilities(device):
+    ports=set(device.get("ports") or [])
+    result=identify_camera_profile(device)
+    profile=result.get("profile")
+    return {
+        "profile":profile,
+        "profile_confidence":result.get("confidence",0),
+        "rtsp_detected":bool(ports.intersection({554,8554})),
+        "web_detected":bool(ports.intersection({80,81,443,8080,8000})),
+        "onvif_possible":bool(profile and ports.intersection(set(profile.get("onvif_ports",[])))),
+        "firmware_mode":"dafang_hacks_possible" if profile and profile.get("id")=="xiaomi_xiaofang" and ports.intersection({22,554,8554}) else ("original_limited" if profile and profile.get("id")=="xiaomi_xiaofang" else "unknown")
+    }
+
 RTSP_COMMON_PATHS=[
     "/onvif1","/onvif2",
     "/live/ch00_0","/live/ch00_1","/live/ch0",
@@ -609,7 +643,7 @@ class H(BaseHTTPRequestHandler):
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
-        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
+        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
     def do_POST(self):
@@ -643,6 +677,9 @@ class H(BaseHTTPRequestHandler):
             return self.js(add_rtsp_camera(d))
         if u.path=="/api/cameras/onvif/probe":
             return self.js(onvif_probe(d))
+        if u.path=="/api/cameras/analyze":
+            dev=d.get("device",d)
+            return self.js({"ok":True,"device":dev,"capabilities":camera_capabilities(dev)})
         if u.path=="/api/cameras/delete":
             cid=d.get("id")
             save(CAMERAS,[x for x in load(CAMERAS,[]) if x.get("id")!=cid])

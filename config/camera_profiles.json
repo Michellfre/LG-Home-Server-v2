@@ -1,0 +1,112 @@
+{
+  "version": "14.0",
+  "profiles": [
+    {
+      "id": "yoosee",
+      "name": "Yoosee",
+      "vendors": [
+        "yoosee",
+        "gwell"
+      ],
+      "mac_prefixes": [],
+      "ports": [
+        554,
+        5000
+      ],
+      "rtsp_paths": [
+        "/onvif1",
+        "/onvif2",
+        "/live/ch00_0",
+        "/live/ch00_1",
+        "/stream1",
+        "/stream2",
+        "/11",
+        "/12"
+      ],
+      "onvif_ports": [
+        80,
+        5000,
+        8000,
+        8080,
+        8899
+      ],
+      "notes": "Use a senha NVR/RTSP definida no aplicativo."
+    },
+    {
+      "id": "xiaomi_xiaofang",
+      "name": "Xiaomi Xiao Fang",
+      "vendors": [
+        "xiaomi",
+        "chuangmi"
+      ],
+      "mac_prefixes": [
+        "34:CE:00"
+      ],
+      "ports": [
+        22,
+        80,
+        443,
+        554,
+        8554,
+        8080
+      ],
+      "rtsp_paths": [
+        "/unicast",
+        "/live/ch00_0",
+        "/stream1",
+        "/onvif1"
+      ],
+      "onvif_ports": [
+        80,
+        8080,
+        8899
+      ],
+      "notes": "Firmware original costuma ser fechado; Dafang Hacks pode liberar RTSP/ONVIF."
+    },
+    {
+      "id": "hikvision",
+      "name": "Hikvision",
+      "vendors": [
+        "hikvision"
+      ],
+      "mac_prefixes": [],
+      "ports": [
+        80,
+        443,
+        554,
+        8000
+      ],
+      "rtsp_paths": [
+        "/Streaming/Channels/101",
+        "/Streaming/Channels/102"
+      ],
+      "onvif_ports": [
+        80,
+        8000
+      ]
+    },
+    {
+      "id": "dahua_intelbras",
+      "name": "Dahua / Intelbras",
+      "vendors": [
+        "dahua",
+        "intelbras"
+      ],
+      "mac_prefixes": [],
+      "ports": [
+        80,
+        443,
+        554,
+        37777
+      ],
+      "rtsp_paths": [
+        "/cam/realmonitor?channel=1&subtype=0",
+        "/cam/realmonitor?channel=1&subtype=1"
+      ],
+      "onvif_ports": [
+        80,
+        8899
+      ]
+    }
+  ]
+}
