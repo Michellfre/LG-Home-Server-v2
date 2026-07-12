@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.4 Camera Manager Learning"
-BUILD="001440"
+VERSION="Open Home OS v14.5 Dashboard Cameras Live"
+BUILD="001450"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"

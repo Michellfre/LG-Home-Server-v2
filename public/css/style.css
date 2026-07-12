@@ -250,3 +250,148 @@ header{
 .camera-card-actions button{
   flex:1 1 130px;
 }
+
+
+/* v14.5 Dashboard cameras and live view */
+.panel-title-row{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+.panel-title-row h3,.panel-title-row p{margin-top:0}
+.dashboard-camera-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:16px;
+  margin-top:16px;
+}
+.dashboard-camera-card{
+  overflow:hidden;
+  border:1px solid #334155;
+  border-radius:18px;
+  background:rgba(15,23,42,.85);
+}
+.dashboard-camera-preview{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  aspect-ratio:16/9;
+  padding:0;
+  border:0;
+  border-radius:0;
+  overflow:hidden;
+  background:#020617;
+  color:#94a3b8;
+}
+.dashboard-camera-preview img{
+  display:none;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.dashboard-camera-preview span{
+  padding:16px;
+}
+.dashboard-camera-info{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 15px 8px;
+}
+.dashboard-camera-info h4{
+  margin:0 0 4px;
+  font-size:17px;
+}
+.dashboard-camera-info small{color:#94a3b8}
+.camera-online-dot{color:#22c55e;font-size:18px}
+.dashboard-camera-buttons{
+  display:flex;
+  gap:8px;
+  padding:8px 15px 15px;
+}
+.dashboard-camera-buttons button{flex:1}
+
+.camera-live-modal{
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:22px;
+  background:rgba(2,6,23,.88);
+  backdrop-filter:blur(7px);
+}
+.camera-live-modal.hidden{display:none}
+.camera-live-window{
+  width:min(1100px,96vw);
+  max-height:94vh;
+  overflow:auto;
+  border:1px solid #475569;
+  border-radius:22px;
+  background:#0f172a;
+  box-shadow:0 30px 90px rgba(0,0,0,.55);
+}
+.camera-live-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:18px 20px;
+}
+.camera-live-header h2{margin:0 0 5px}
+.camera-live-header small{color:#94a3b8}
+.camera-live-close{
+  width:46px;
+  height:46px;
+  padding:0;
+  border-radius:50%;
+  font-size:30px;
+}
+.camera-live-stage{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  aspect-ratio:16/9;
+  overflow:hidden;
+  background:#000;
+}
+.camera-live-stage img{
+  display:none;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+}
+#camera-live-loading{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  color:#cbd5e1;
+}
+.camera-live-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:14px 20px 20px;
+  flex-wrap:wrap;
+}
+.camera-live-actions span{
+  margin-right:auto;
+  color:#22c55e;
+  font-weight:700;
+}
+@media(max-width:680px){
+  .panel-title-row{flex-direction:column}
+  .camera-live-modal{padding:6px}
+  .camera-live-window{width:100%;border-radius:14px}
+  .camera-live-actions button{flex:1 1 130px}
+}

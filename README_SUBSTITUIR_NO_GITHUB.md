@@ -1,6 +1,4 @@
-# Open Home OS v14.4 — Camera Manager Learning
-
-Esta versão aprende a configuração que funcionou e evita repetir dezenas de testes.
+# Open Home OS v14.5 — Dashboard Cameras Live
 
 Substitua no GitHub:
 
@@ -8,20 +6,23 @@ Substitua no GitHub:
 - `public/index.html`
 - `public/css/style.css`
 - `public/js/app.js`
-- `config/camera_profiles.json`
 
-## Melhorias
+## Novidades
 
-- memoriza caminho e transporte RTSP por IP, porta e perfil;
-- prioriza automaticamente `/onvif2` por UDP após validação;
-- preenche o caminho encontrado na tela;
-- adiciona a câmera sem repetir toda a busca profunda;
-- salva codec, resolução, transporte e data do último teste;
-- remove credenciais das mensagens técnicas;
-- adiciona snapshot JPEG no Camera Manager;
-- botão “Atualizar imagem” em cada câmera cadastrada.
+- miniaturas das câmeras adicionadas no Dashboard;
+- atualização automática das miniaturas;
+- botão “Ver ao vivo”;
+- janela ampliada da câmera;
+- atualização contínua de frames compatível com Brave;
+- pausar/continuar;
+- tela cheia;
+- botão para atualizar todas as miniaturas.
 
-## Atualização no Termux
+> O modo ao vivo desta versão usa quadros JPEG sucessivos.
+> Isso funciona no navegador sem abrir RTSP diretamente.
+> Uma versão futura poderá usar HLS/WebRTC para vídeo mais fluido.
+
+## Atualização
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -29,13 +30,8 @@ git pull
 pkg install ffmpeg
 bash install.sh
 nginx -s reload
+pkill -f server.py
 bash scripts/start_api.sh
 ```
 
-No Brave: `Ctrl + F5`.
-
-Fluxo recomendado:
-1. Teste rápido;
-2. quando aparecer “Vídeo encontrado”, clique em “Testar e adicionar”;
-3. abra “Câmeras”;
-4. clique em “Atualizar imagem”.
+No Brave, pressione `Ctrl + F5`.

@@ -25,6 +25,7 @@ function showPage(id){
   const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,cameras:6,tv:7,system:8};
   if(order[id]!=null && document.querySelectorAll(".sidebar a")[order[id]]) document.querySelectorAll(".sidebar a")[order[id]].classList.add("active");
   setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",cameras:"Camera Manager",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
+  if(id==="dashboard") refreshDashboardCameras(false);
   if(id==="connect") loadDevices();
   if(id==="rooms") loadRooms();
   if(id==="setup") loadTuyaConfig();
@@ -67,6 +68,7 @@ async function loadStatus(){
     }
     loadEvents();
     loadNotifyCount();
+    refreshDashboardCameras(false);
   }catch(e){ console.log(e); }
 }
 
@@ -634,7 +636,166 @@ async function deleteCamera(id){
   loadCameraManager(); loadStatus();
 }
 
+
+let dashboardCameraLastRefresh=0;
+let cameraLiveTimer=null;
+let cameraLivePaused=false;
+let cameraLiveCurrent=null;
+let dashboardCameraLoading=false;
+
+async function fetchCameraSnapshot(id){
+  return await safeJson(apiBase()+"/api/cameras/snapshot",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({id})
+  });
+}
+
+async function refreshDashboardCameras(force=false){
+  const grid=el("dashboard-camera-grid");
+  if(!grid || dashboardCameraLoading) return;
+
+  const now=Date.now();
+  if(!force && now-dashboardCameraLastRefresh<15000) return;
+  dashboardCameraLastRefresh=now;
+  dashboardCameraLoading=true;
+
+  try{
+    const data=await safeJson(apiBase()+"/api/cameras?"+Date.now());
+    const cameras=data.items||[];
+
+    if(!cameras.length){
+      grid.innerHTML="<p>Nenhuma câmera adicionada.</p>";
+      dashboardCameraLoading=false;
+      return;
+    }
+
+    grid.innerHTML=cameras.map(c=>`
+      <article class="dashboard-camera-card" id="dash-camera-${c.id}">
+        <button class="dashboard-camera-preview" onclick="openCameraLive('${c.id}')">
+          <img id="dash-camera-img-${c.id}" alt="${c.name||"Câmera"}">
+          <span id="dash-camera-placeholder-${c.id}">Carregando miniatura...</span>
+        </button>
+        <div class="dashboard-camera-info">
+          <div>
+            <h4>${c.name||c.ip}</h4>
+            <small>${c.room||"Sem ambiente"} • ${c.width&&c.height?`${c.width}×${c.height}`:"resolução não informada"}</small>
+          </div>
+          <span class="camera-online-dot">●</span>
+        </div>
+        <div class="dashboard-camera-buttons">
+          <button onclick="openCameraLive('${c.id}')">Ver ao vivo</button>
+          <button onclick="refreshDashboardCamera('${c.id}')">Atualizar</button>
+        </div>
+      </article>
+    `).join("");
+
+    await Promise.allSettled(cameras.map(c=>refreshDashboardCamera(c.id)));
+  }catch(e){
+    grid.innerHTML=`<p>Erro ao carregar câmeras: ${e.message}</p>`;
+  }finally{
+    dashboardCameraLoading=false;
+  }
+}
+
+async function refreshDashboardCamera(id){
+  const img=el("dash-camera-img-"+id);
+  const placeholder=el("dash-camera-placeholder-"+id);
+  if(placeholder) placeholder.textContent="Capturando imagem...";
+
+  try{
+    const r=await fetchCameraSnapshot(id);
+    if(r.ok && r.data && img){
+      img.src=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
+      img.style.display="block";
+      if(placeholder) placeholder.style.display="none";
+    }else if(placeholder){
+      placeholder.textContent=r.message||"Imagem indisponível";
+    }
+  }catch(e){
+    if(placeholder) placeholder.textContent="Câmera sem resposta";
+  }
+}
+
+async function openCameraLive(id){
+  const data=await safeJson(apiBase()+"/api/cameras?"+Date.now());
+  const camera=(data.items||[]).find(c=>String(c.id)===String(id));
+  if(!camera){
+    toast("Câmera não encontrada");
+    return;
+  }
+
+  cameraLiveCurrent=camera;
+  cameraLivePaused=false;
+  el("camera-live-modal")?.classList.remove("hidden");
+  setText("camera-live-title",camera.name||camera.ip||"Câmera");
+  setText("camera-live-meta",`${camera.room||"Sem ambiente"} • ${camera.path||"--"} • ${(camera.transport||"--").toUpperCase()} • ${camera.codec||"--"}`);
+  setText("camera-live-status","● Conectando");
+  const loading=el("camera-live-loading");
+  if(loading){
+    loading.style.display="flex";
+    loading.textContent="Conectando à câmera...";
+  }
+
+  await captureLiveFrame();
+  clearInterval(cameraLiveTimer);
+  cameraLiveTimer=setInterval(()=>{
+    if(!cameraLivePaused && cameraLiveCurrent) captureLiveFrame();
+  },1200);
+}
+
+async function captureLiveFrame(){
+  if(!cameraLiveCurrent) return;
+  const image=el("camera-live-image");
+  const loading=el("camera-live-loading");
+
+  try{
+    const r=await fetchCameraSnapshot(cameraLiveCurrent.id);
+    if(r.ok && r.data){
+      image.src=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
+      image.style.display="block";
+      if(loading) loading.style.display="none";
+      setText("camera-live-status","● Ao vivo");
+    }else{
+      setText("camera-live-status","● Sem imagem");
+      if(loading){
+        loading.style.display="flex";
+        loading.textContent=r.message||"Não foi possível obter imagem.";
+      }
+    }
+  }catch(e){
+    setText("camera-live-status","● Offline");
+    if(loading){
+      loading.style.display="flex";
+      loading.textContent="Câmera sem resposta.";
+    }
+  }
+}
+
+function toggleCameraLive(){
+  cameraLivePaused=!cameraLivePaused;
+  setText("camera-live-status",cameraLivePaused?"● Pausado":"● Ao vivo");
+  if(!cameraLivePaused) captureLiveFrame();
+}
+
+function closeCameraLive(event){
+  if(event && event.target!==el("camera-live-modal")) return;
+  clearInterval(cameraLiveTimer);
+  cameraLiveTimer=null;
+  cameraLiveCurrent=null;
+  cameraLivePaused=false;
+  el("camera-live-modal")?.classList.add("hidden");
+}
+
+function cameraLiveFullscreen(){
+  const stage=document.querySelector(".camera-live-stage");
+  if(!stage) return;
+  if(document.fullscreenElement) document.exitFullscreen();
+  else stage.requestFullscreen?.();
+}
+
 loadStatus();
+refreshDashboardCameras(true);
 setInterval(loadStatus,5000);
 loadDiscoveryState();
 
