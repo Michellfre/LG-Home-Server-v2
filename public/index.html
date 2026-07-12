@@ -1,7 +1,7 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1460"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.6 Vídeo ao Vivo</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.6.1</title><link rel="stylesheet" href="css/style.css?v=1460"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.6.1 Vídeo ao Vivo</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
-<main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v13.5 com correção JavaScript e Discovery PRO.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
+<main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v14.6.1 com Camera Manager e vídeo ao vivo.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
 <section id="dashboard" class="page active-page"><div class="hero-grid"><section class="panel hero"><h3>🏠 Casa</h3><div class="house-score"><span id="health">...</span><small id="health-label">saúde geral</small></div><p id="house-message">Carregando...</p></section><section class="panel"><h3>Open Home Connect</h3><div class="mini-grid"><div><b>Dispositivos</b><span id="dev-total">...</span></div><div><b>Online</b><span id="dev-online">...</span></div><div><b>Portas abertas</b><span id="open-doors">...</span></div><div><b>Descobertos</b><span id="discovered">...</span></div></div></section></div><div class="cards"><div class="card"><h3>📡 IP</h3><p id="ip">...</p></div><div class="card"><h3>💾 Interno</h3><p id="disk">...</p><div class="bar"><span id="disk-bar"></span></div></div><div class="card"><h3>💽 SD Card</h3><p id="sdcard">...</p><small id="sd-extra"></small></div><div class="card"><h3>🌡️ Ambiente</h3><p id="env-temp">...</p></div><div class="card"><h3>💧 Umidade</h3><p id="env-hum">...</p></div><div class="card"><h3>📶 Wi-Fi</h3><p id="wifi">...</p></div></div><section class="panel dashboard-camera-panel">
   <div class="panel-title-row">
@@ -60,7 +60,7 @@
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1460"></script>
+<div id="toast"></div><script src="js/app.js?v=1461"></script>
 <div id="camera-live-modal" class="camera-live-modal hidden" onclick="closeCameraLive(event)">
   <div class="camera-live-window" onclick="event.stopPropagation()">
     <div class="camera-live-header">

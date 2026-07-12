@@ -598,6 +598,7 @@ async function loadCameraManager(){
         ${c.codec||"--"} ${c.width&&c.height?`• ${c.width}×${c.height}`:""}
       </small>
       <div class="camera-card-actions">
+        <button onclick="openCameraLive('${c.id}')">Ver ao vivo</button>
         <button onclick="loadCameraSnapshot('${c.id}')">Atualizar imagem</button>
         <button class="danger" onclick="deleteCamera('${c.id}')">Excluir</button>
       </div>
@@ -636,6 +637,82 @@ async function deleteCamera(id){
   loadCameraManager(); loadStatus();
 }
 
+
+
+let dashboardCameraLoading=false;
+
+async function refreshDashboardCameras(force=false){
+  const grid=el("dashboard-camera-grid");
+  if(!grid || dashboardCameraLoading) return;
+
+  const now=Date.now();
+  if(!force && now-dashboardCameraLastRefresh<15000) return;
+
+  dashboardCameraLastRefresh=now;
+  dashboardCameraLoading=true;
+
+  try{
+    const data=await safeJson(apiBase()+"/api/cameras?"+Date.now());
+    const cameras=data.items||[];
+
+    if(!cameras.length){
+      grid.innerHTML="<p>Nenhuma câmera adicionada.</p>";
+      return;
+    }
+
+    grid.innerHTML=cameras.map(c=>`
+      <article class="dashboard-camera-card" id="dash-camera-${c.id}">
+        <button class="dashboard-camera-preview" onclick="openCameraLive('${c.id}')">
+          <img id="dash-camera-img-${c.id}" alt="${c.name||"Câmera"}">
+          <span id="dash-camera-placeholder-${c.id}">Carregando miniatura...</span>
+        </button>
+        <div class="dashboard-camera-info">
+          <div>
+            <h4>${c.name||c.ip}</h4>
+            <small>${c.room||"Sem ambiente"} • ${c.width&&c.height?`${c.width}×${c.height}`:"resolução não informada"}</small>
+          </div>
+          <span class="camera-online-dot">●</span>
+        </div>
+        <div class="dashboard-camera-buttons">
+          <button onclick="openCameraLive('${c.id}')">Ver ao vivo</button>
+          <button onclick="refreshDashboardCamera('${c.id}')">Atualizar</button>
+        </div>
+      </article>
+    `).join("");
+
+    await Promise.allSettled(cameras.map(c=>refreshDashboardCamera(c.id)));
+  }catch(e){
+    grid.innerHTML=`<p>Erro ao carregar câmeras: ${e.message}</p>`;
+    console.error("Dashboard cameras:",e);
+  }finally{
+    dashboardCameraLoading=false;
+  }
+}
+
+async function refreshDashboardCamera(id){
+  const img=el("dash-camera-img-"+id);
+  const placeholder=el("dash-camera-placeholder-"+id);
+
+  if(placeholder){
+    placeholder.style.display="block";
+    placeholder.textContent="Capturando imagem...";
+  }
+
+  try{
+    const r=await fetchCameraSnapshot(id);
+    if(r.ok && r.data && img){
+      img.onload=()=>{
+        img.style.display="block";
+        if(placeholder) placeholder.style.display="none";
+      };
+      img.src=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
+    }else if(placeholder){
+      placeholder.textContent=r.message||"Imagem indisponível";
+    }
+  }catch(e){
+    if(placeholder) placeholder.textContent="Câmera sem resposta";
+  }
+}
 
 let dashboardCameraLastRefresh=0;
 let cameraLivePaused=false;
