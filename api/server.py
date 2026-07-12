@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.6.4 Camera Center Fix"
-BUILD="001464"
+VERSION="Open Home OS v14.7 Camera Recording"
+BUILD="001470"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -26,6 +26,9 @@ SETTINGS=CONFIG/"settings.json"; CAMERAS=CONFIG/"cameras.json"; EVENTS=CONFIG/"e
 DEVICES=CONFIG/"devices.json"; ROOMS=CONFIG/"rooms.json"; TUYA_CFG=CONFIG/"tuya_cloud.json"; TUYA_CACHE=CONFIG/"tuya_cache.json"; NETWORK=CONFIG/"network_devices.json"; DISCOVERY_STATE=CONFIG/"discovery_state.json"
 CAMERA_PROFILES=Path(__file__).resolve().parent.parent/"config"/"camera_profiles.json"
 CAMERA_LEARNED=CONFIG/"camera_learned.json"
+CAMERA_RECORDING_CONFIG=CONFIG/"camera_recording.json"
+RECORDINGS=BASE/"recordings"
+RECORDINGS.mkdir(parents=True,exist_ok=True)
 
 def ensure(p,d):
     if not p.exists():
@@ -1062,6 +1065,192 @@ def jarvis(cmd):
     return {"ok":True,"reply":reply,"action":action}
 
 
+
+RECORDING_PROCESSES={}
+RECORDING_LOCK=threading.Lock()
+
+def recording_config():
+    return load(CAMERA_RECORDING_CONFIG,{
+        "segment_seconds":300,
+        "retention_days":7,
+        "max_storage_gb":20,
+        "format":"mp4",
+        "copy_video":True
+    })
+
+def save_recording_config(data):
+    cfg=recording_config()
+    allowed=["segment_seconds","retention_days","max_storage_gb","format","copy_video"]
+    for k in allowed:
+        if k in data:
+            cfg[k]=data[k]
+    cfg["segment_seconds"]=max(30,min(3600,int(cfg.get("segment_seconds",300))))
+    cfg["retention_days"]=max(1,min(365,int(cfg.get("retention_days",7))))
+    cfg["max_storage_gb"]=max(1,min(500,int(cfg.get("max_storage_gb",20))))
+    cfg["format"]="mp4"
+    save(CAMERA_RECORDING_CONFIG,cfg)
+    return cfg
+
+def recording_dir(camera):
+    safe=re.sub(r"[^A-Za-z0-9_.-]+","_",str(camera.get("name") or camera.get("ip") or camera.get("id")))
+    folder=RECORDINGS/safe
+    folder.mkdir(parents=True,exist_ok=True)
+    return folder
+
+def recording_command(camera,cfg):
+    ip=str(camera.get("ip","")).strip()
+    port=int(camera.get("port") or 554)
+    path=str(camera.get("path","")).strip()
+    user=str(camera.get("username",""))
+    password=str(camera.get("password",""))
+    transport=str(camera.get("transport","udp") or "udp").lower()
+    if not ip or not path:
+        return None,None
+
+    url=rtsp_url(ip,port,path,user,password)
+    folder=recording_dir(camera)
+    pattern=str(folder/"%Y-%m-%d_%H-%M-%S.mp4")
+
+    cmd=["ffmpeg","-hide_banner","-loglevel","warning"]
+    if transport in ["tcp","udp"]:
+        cmd += ["-rtsp_transport",transport]
+    cmd += [
+        "-i",url,
+        "-map","0:v:0",
+        "-an",
+        "-c:v","copy" if cfg.get("copy_video",True) else "libx264",
+        "-f","segment",
+        "-segment_time",str(int(cfg.get("segment_seconds",300))),
+        "-reset_timestamps","1",
+        "-strftime","1",
+        pattern
+    ]
+    return cmd,folder
+
+def start_recording(camera_id):
+    camera=find_camera(camera_id)
+    if not camera:
+        return {"ok":False,"message":"Câmera não encontrada."}
+
+    with RECORDING_LOCK:
+        current=RECORDING_PROCESSES.get(str(camera_id))
+        if current and current.get("process") and current["process"].poll() is None:
+            return {"ok":True,"message":"Gravação já está ativa.","status":recording_status(camera_id)}
+
+        cfg=recording_config()
+        cmd,folder=recording_command(camera,cfg)
+        if not cmd:
+            return {"ok":False,"message":"Configuração RTSP incompleta."}
+
+        log_path=folder/"recording.log"
+        log=open(log_path,"ab",buffering=0)
+        try:
+            proc=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=log)
+        except FileNotFoundError:
+            log.close()
+            return {"ok":False,"message":"FFmpeg não instalado. Execute: pkg install ffmpeg"}
+        except Exception as e:
+            log.close()
+            return {"ok":False,"message":str(e)}
+
+        RECORDING_PROCESSES[str(camera_id)]={
+            "process":proc,
+            "log":log,
+            "started":time.strftime("%Y-%m-%d %H:%M:%S"),
+            "folder":str(folder),
+            "pid":proc.pid
+        }
+        return {"ok":True,"message":"Gravação iniciada.","status":recording_status(camera_id)}
+
+def stop_recording(camera_id):
+    with RECORDING_LOCK:
+        item=RECORDING_PROCESSES.get(str(camera_id))
+        if not item:
+            return {"ok":True,"message":"Gravação já estava parada."}
+        proc=item.get("process")
+        try:
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try: proc.wait(timeout=5)
+                except Exception: proc.kill()
+        finally:
+            try: item.get("log").close()
+            except Exception: pass
+            RECORDING_PROCESSES.pop(str(camera_id),None)
+        return {"ok":True,"message":"Gravação interrompida."}
+
+def recording_status(camera_id=None):
+    with RECORDING_LOCK:
+        ids=[str(camera_id)] if camera_id is not None else list(RECORDING_PROCESSES.keys())
+        items=[]
+        for cid in ids:
+            item=RECORDING_PROCESSES.get(cid)
+            if not item:
+                if camera_id is not None:
+                    return {"camera_id":cid,"recording":False}
+                continue
+            proc=item.get("process")
+            active=bool(proc and proc.poll() is None)
+            if not active:
+                try: item.get("log").close()
+                except Exception: pass
+                RECORDING_PROCESSES.pop(cid,None)
+                if camera_id is not None:
+                    return {"camera_id":cid,"recording":False}
+                continue
+            items.append({
+                "camera_id":cid,
+                "recording":True,
+                "started":item.get("started"),
+                "folder":item.get("folder"),
+                "pid":item.get("pid")
+            })
+        if camera_id is not None:
+            return items[0] if items else {"camera_id":str(camera_id),"recording":False}
+        return {"items":items}
+
+def recordings_list(camera_id):
+    camera=find_camera(camera_id)
+    if not camera:
+        return {"ok":False,"message":"Câmera não encontrada.","items":[]}
+    folder=recording_dir(camera)
+    items=[]
+    for p in sorted(folder.glob("*.mp4"),key=lambda x:x.stat().st_mtime,reverse=True):
+        st=p.stat()
+        items.append({
+            "name":p.name,
+            "size_mb":round(st.st_size/1024/1024,2),
+            "modified":time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(st.st_mtime)),
+            "path":str(p)
+        })
+    return {"ok":True,"items":items[:200],"folder":str(folder)}
+
+def cleanup_recordings():
+    cfg=recording_config()
+    cutoff=time.time()-int(cfg.get("retention_days",7))*86400
+    files=[]
+    for p in RECORDINGS.rglob("*.mp4"):
+        try:
+            st=p.stat()
+            if st.st_mtime<cutoff:
+                p.unlink()
+            else:
+                files.append((p,st))
+        except Exception:
+            pass
+
+    max_bytes=int(cfg.get("max_storage_gb",20))*1024*1024*1024
+    total=sum(st.st_size for _,st in files)
+    if total>max_bytes:
+        for p,st in sorted(files,key=lambda x:x[1].st_mtime):
+            if total<=max_bytes: break
+            try:
+                p.unlink()
+                total-=st.st_size
+            except Exception:
+                pass
+    return {"ok":True,"used_gb":round(total/1024/1024/1024,2)}
+
 LIVE_CLIENTS={}
 LIVE_LOCK=threading.Lock()
 
@@ -1190,7 +1379,11 @@ class H(BaseHTTPRequestHandler):
             return self.mjpeg(camera_id,fps,width)
         if u.path=="/api/cameras/live/status":
             return self.js({"ok":True,"clients":LIVE_CLIENTS})
-        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/cameras/learned":lambda:{"items":list(learned_camera_profiles().values())},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
+        if u.path=="/api/cameras/recordings":
+            camera_id=(q.get("id") or [""])[0]
+            return self.js(recordings_list(camera_id))
+
+        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/cameras/learned":lambda:{"items":list(learned_camera_profiles().values())},"/api/cameras/recording/config":lambda:recording_config(),"/api/cameras/recording/status":lambda:recording_status(),"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
     def do_POST(self):
@@ -1240,6 +1433,15 @@ class H(BaseHTTPRequestHandler):
             if not camera:
                 return self.js({"ok":False,"message":"Câmera não encontrada."})
             return self.js(camera_snapshot(camera))
+        if u.path=="/api/cameras/recording/start":
+            return self.js(start_recording(str(d.get("id",""))))
+        if u.path=="/api/cameras/recording/stop":
+            return self.js(stop_recording(str(d.get("id",""))))
+        if u.path=="/api/cameras/recording/config":
+            return self.js({"ok":True,"config":save_recording_config(d)})
+        if u.path=="/api/cameras/recording/cleanup":
+            return self.js(cleanup_recordings())
+
 
 
 

@@ -494,3 +494,61 @@ header{
 .dashboard-camera-grid{
   grid-template-columns:repeat(auto-fill,minmax(175px,210px));
 }
+
+
+/* v14.7 Camera recording */
+.hidden{display:none!important}
+
+.recording-settings-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;
+  align-items:end;
+}
+
+.recording-settings-grid label{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  color:#cbd5e1;
+}
+
+.recording-settings-grid input,
+.recording-settings-grid select{
+  width:100%;
+}
+
+.record-start{
+  background:#dc2626!important;
+}
+
+.record-stop{
+  background:#f59e0b!important;
+}
+
+.recording-list{
+  margin-top:12px;
+}
+
+.recording-list:empty{
+  display:none;
+}
+
+.recording-file{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin:6px 0;
+  padding:9px 10px;
+  border-radius:9px;
+  background:#0f172a;
+}
+
+.recording-file span{
+  word-break:break-all;
+}
+
+.recording-file small{
+  color:#94a3b8;
+  white-space:nowrap;
+}

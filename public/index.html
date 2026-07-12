@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.6.4</title><link rel="stylesheet" href="css/style.css?v=1464"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.6.4 Camera Center</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.7</title><link rel="stylesheet" href="css/style.css?v=1470"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.7 Camera Recording</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v14.6.1 com Camera Manager e vídeo ao vivo.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
@@ -26,7 +26,28 @@
 
 <section id="network" class="page"><section class="panel"><h3>📡 Open Home Discovery Engine</h3><p>Busca dispositivos, classifica por tipo e permite importar para o Open Home Connect.</p><div class="wizard discovery-actions"><button onclick="startDiscovery()">Procurar dispositivos</button><button onclick="loadNetwork()">Atualizar lista</button><select id="discovery-filter" onchange="renderNetwork(lastNetworkDevices)"><option value="">Todos os tipos</option><option value="camera">Câmeras</option><option value="pc_nas">PC/NAS</option><option value="printer">Impressoras</option><option value="web_device">Web</option><option value="open_home_os">Open Home OS</option><option value="device">Dispositivos</option></select><input id="discovery-search" oninput="renderNetwork(lastNetworkDevices)" placeholder="Pesquisar IP, nome, tipo"></div><div class="progress-wrap"><div class="progress"><span id="discovery-progress"></span></div><small id="discovery-message">Nenhuma busca ainda.</small></div><div id="network-summary" class="summary-box"></div><div id="network-list" class="module-grid"></div></section></section>
 
-<section id="cameras" class="page"><section class="panel"><h3>📹 Camera Manager</h3><p>Instalação, diagnóstico e gerenciamento das câmeras.</p><div id="camera-manager-list" class="module-grid"></div></section><section class="panel"><h3>Perfis compatíveis</h3><div id="camera-profile-list" class="module-grid"></div><div id="xiaomi-xiaofang-card" class="xiaomi-card hidden"></div></section></section><section id="tv" class="page"><section class="tv-screen"><div class="tv-top"><h1>Open Home OS</h1><div id="tv-clock" class="tv-clock">--:--</div></div><div class="tv-cards"><div><h3>Saúde</h3><p id="tv-health">...</p></div><div><h3>Dispositivos</h3><p id="tv-devs">...</p></div><div><h3>Ambiente</h3><p id="tv-env">...</p></div><div><h3>Umidade</h3><p id="tv-hum">...</p></div><div><h3>Portas</h3><p id="tv-doors">...</p></div><div><h3>SD</h3><p id="tv-sd">...</p></div></div></section></section>
+<section id="cameras" class="page"><section class="panel"><h3>📹 Camera Manager</h3><p>Instalação, diagnóstico e gerenciamento das câmeras.</p><div id="camera-manager-list" class="module-grid"></div></section><section class="panel">
+  <h3>⏺ Configurações de gravação</h3>
+  <div class="recording-settings-grid">
+    <label>Segmentos
+      <select id="record-segment">
+        <option value="60">1 minuto</option>
+        <option value="300" selected>5 minutos</option>
+        <option value="600">10 minutos</option>
+        <option value="1800">30 minutos</option>
+      </select>
+    </label>
+    <label>Retenção
+      <input id="record-retention" type="number" min="1" max="365" value="7">
+    </label>
+    <label>Limite de armazenamento (GB)
+      <input id="record-max-gb" type="number" min="1" max="500" value="20">
+    </label>
+    <button onclick="saveRecordingSettings()">Salvar configurações</button>
+    <button onclick="cleanupRecordings()">Limpar gravações antigas</button>
+  </div>
+  <div id="recording-config-status"></div>
+</section><section class="panel"><h3>Perfis compatíveis</h3><div id="camera-profile-list" class="module-grid"></div><div id="xiaomi-xiaofang-card" class="xiaomi-card hidden"></div></section></section><section id="tv" class="page"><section class="tv-screen"><div class="tv-top"><h1>Open Home OS</h1><div id="tv-clock" class="tv-clock">--:--</div></div><div class="tv-cards"><div><h3>Saúde</h3><p id="tv-health">...</p></div><div><h3>Dispositivos</h3><p id="tv-devs">...</p></div><div><h3>Ambiente</h3><p id="tv-env">...</p></div><div><h3>Umidade</h3><p id="tv-hum">...</p></div><div><h3>Portas</h3><p id="tv-doors">...</p></div><div><h3>SD</h3><p id="tv-sd">...</p></div></div></section></section>
 
 <section id="system" class="page"><section class="panel"><h3>⚙️ Sistema</h3><button onclick="diag()">Diagnóstico</button><button onclick="createBackup()">Backup</button><pre id="diagnostic">...</pre></section></section>
 <section id="notifications" class="page"><section class="panel"><h3>🔔 Notificações</h3><button onclick="clearNotifications()">Limpar</button><div id="notifications-list"></div></section></section></main>
@@ -60,7 +81,7 @@
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1464"></script>
+<div id="toast"></div><script src="js/app.js?v=1470"></script>
 <div id="camera-live-modal" class="camera-live-modal hidden" onclick="closeCameraLive(event)">
   <div class="camera-live-window" onclick="event.stopPropagation()">
     <div class="camera-live-header">

@@ -600,9 +600,16 @@ async function loadCameraManager(){
       <div class="camera-card-actions">
         <button onclick="openCameraLive('${c.id}')">Ver ao vivo</button>
         <button onclick="loadCameraSnapshot('${c.id}')">Atualizar imagem</button>
+        <button class="record-start" id="record-start-${c.id}" onclick="startCameraRecording('${c.id}')">Gravar</button>
+        <button class="record-stop hidden" id="record-stop-${c.id}" onclick="stopCameraRecording('${c.id}')">Parar</button>
+        <button onclick="showCameraRecordings('${c.id}')">Gravações</button>
         <button class="danger" onclick="deleteCamera('${c.id}')">Excluir</button>
       </div>
+      <div id="recording-list-${c.id}" class="recording-list"></div>
     </div>`).join("")||"<p>Nenhuma câmera adicionada.</p>");
+
+  await syncRecordingStatus();
+  await loadRecordingSettings();
 
   setHTML("camera-profile-list",(profiles.profiles||[]).map(p=>`
     <div class="module">
@@ -662,6 +669,30 @@ const CameraCenter={
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({id})
     });
+  },
+
+  async recordingStart(id){
+    return await safeJson(apiBase()+"/api/cameras/recording/start",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id})
+    });
+  },
+
+  async recordingStop(id){
+    return await safeJson(apiBase()+"/api/cameras/recording/stop",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id})
+    });
+  },
+
+  async recordingStatus(){
+    return await safeJson(apiBase()+"/api/cameras/recording/status?"+Date.now());
+  },
+
+  async recordings(id){
+    return await safeJson(apiBase()+"/api/cameras/recordings?id="+encodeURIComponent(id)+"&_"+Date.now());
   }
 };
 
@@ -868,10 +899,103 @@ function cameraLiveFullscreen(){
   else stage.requestFullscreen?.();
 }
 
+
+async function startCameraRecording(id){
+  const r=await CameraCenter.recordingStart(id);
+  toast(r.message||"Gravação iniciada");
+  await syncRecordingStatus();
+}
+
+async function stopCameraRecording(id){
+  const r=await CameraCenter.recordingStop(id);
+  toast(r.message||"Gravação parada");
+  await syncRecordingStatus();
+}
+
+async function syncRecordingStatus(){
+  try{
+    const r=await CameraCenter.recordingStatus();
+    const active=new Set((r.items||[]).map(x=>String(x.camera_id)));
+
+    document.querySelectorAll("[id^='record-start-']").forEach(btn=>{
+      const id=btn.id.replace("record-start-","");
+      btn.classList.toggle("hidden",active.has(id));
+    });
+
+    document.querySelectorAll("[id^='record-stop-']").forEach(btn=>{
+      const id=btn.id.replace("record-stop-","");
+      btn.classList.toggle("hidden",!active.has(id));
+    });
+  }catch(e){
+    console.error("Recording status",e);
+  }
+}
+
+async function showCameraRecordings(id){
+  const box=el("recording-list-"+id);
+  if(!box) return;
+  box.innerHTML="<p>Carregando gravações...</p>";
+  try{
+    const r=await CameraCenter.recordings(id);
+    if(!r.ok || !(r.items||[]).length){
+      box.innerHTML="<p>Nenhuma gravação encontrada.</p>";
+      return;
+    }
+    box.innerHTML=`
+      <h4>Gravações salvas</h4>
+      ${(r.items||[]).slice(0,20).map(x=>`
+        <div class="recording-file">
+          <span>${x.name}</span>
+          <small>${x.size_mb} MB • ${x.modified}</small>
+        </div>`).join("")}
+      <small>Pasta: ${r.folder||"--"}</small>
+    `;
+  }catch(e){
+    box.innerHTML=`<p>Erro: ${e.message}</p>`;
+  }
+}
+
+async function loadRecordingSettings(){
+  const seg=el("record-segment");
+  if(!seg) return;
+  try{
+    const cfg=await safeJson(apiBase()+"/api/cameras/recording/config?"+Date.now());
+    seg.value=String(cfg.segment_seconds||300);
+    el("record-retention").value=cfg.retention_days||7;
+    el("record-max-gb").value=cfg.max_storage_gb||20;
+  }catch(e){}
+}
+
+async function saveRecordingSettings(){
+  const payload={
+    segment_seconds:Number(el("record-segment")?.value||300),
+    retention_days:Number(el("record-retention")?.value||7),
+    max_storage_gb:Number(el("record-max-gb")?.value||20),
+    copy_video:true
+  };
+  const r=await safeJson(apiBase()+"/api/cameras/recording/config",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  setText("recording-config-status",r.ok?"Configurações salvas.":"Falha ao salvar.");
+  toast(r.ok?"Configurações de gravação salvas":"Falha ao salvar");
+}
+
+async function cleanupRecordings(){
+  const r=await safeJson(apiBase()+"/api/cameras/recording/cleanup",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:"{}"
+  });
+  toast(r.ok?`Limpeza concluída. Uso atual: ${r.used_gb||0} GB`:"Falha na limpeza");
+}
+
 loadStatus();
 refreshDashboardCameras(true);
 setInterval(loadStatus,5000);
 setInterval(()=>refreshDashboardCameras(false),30000);
+setInterval(syncRecordingStatus,5000);
 loadDiscoveryState();
 
 setTimeout(()=>{try{renderXiaomiXiaoFang((window.network_list||[]).find(d=>(d.mac||'').toUpperCase().startsWith('34:CE:00')))}catch(e){}},2500);

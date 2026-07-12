@@ -1,20 +1,19 @@
-# Open Home OS v14.6.4 — Camera Center Fix
+# Open Home OS v14.7 — Camera Recording
 
-Corrige o erro:
+Adiciona gravação manual das câmeras RTSP no armazenamento do servidor.
 
-```text
-fetchCameraSnapshot is not defined
-```
+## Recursos
 
-## O que mudou
-
-- criada uma biblioteca única `CameraCenter`;
-- Dashboard, página Câmeras e vídeo ao vivo passam a usar as mesmas funções;
-- adicionada compatibilidade com chamadas antigas por `fetchCameraSnapshot`;
-- corrigida atualização das miniaturas;
-- mensagens reais do backend continuam sendo exibidas;
-- cartões do Dashboard ficaram um pouco menores;
-- exclusão da câmera também atualiza o Dashboard.
+- botão **Gravar**;
+- botão **Parar**;
+- arquivos MP4 divididos em segmentos;
+- configuração de 1, 5, 10 ou 30 minutos por arquivo;
+- retenção em dias;
+- limite máximo de armazenamento;
+- limpeza automática/manual de gravações antigas;
+- listagem dos arquivos gravados por câmera;
+- gravação usa o transporte salvo, como UDP para Yoosee;
+- vídeo é copiado sem recodificação quando possível, reduzindo uso de CPU.
 
 ## Arquivos para substituir
 
@@ -28,6 +27,7 @@ fetchCameraSnapshot is not defined
 ```bash
 cd ~/LG-Home-Server-v2
 git pull
+pkg install ffmpeg
 bash install.sh
 nginx -s reload
 pkill -f server.py
@@ -40,4 +40,10 @@ No Brave:
 Ctrl + Shift + R
 ```
 
-Depois abra o Dashboard e clique em **Atualizar todas**.
+## Onde ficam as gravações
+
+```text
+~/LG-Home-Server-v2/recordings/
+```
+
+Cada câmera recebe sua própria pasta.
