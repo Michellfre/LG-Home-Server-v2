@@ -22,9 +22,9 @@ function showPage(id){
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active-page"));
   const page = el(id); if(page) page.classList.add("active-page");
   document.querySelectorAll(".sidebar a").forEach(a=>a.classList.remove("active"));
-  const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,cameras:6,tv:7,system:8};
+  const order={dashboard:0,connect:1,rooms:2,setup:3,jarvis:4,network:5,cameras:6,recordings:7,tv:8,system:9};
   if(order[id]!=null && document.querySelectorAll(".sidebar a")[order[id]]) document.querySelectorAll(".sidebar a")[order[id]].classList.add("active");
-  setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",cameras:"Camera Manager",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
+  setText("page-title",{dashboard:"Dashboard Inteligente",connect:"Open Home Connect",rooms:"Ambientes",setup:"Assistente de Instalação",jarvis:"Jarvis",network:"Open Home Discovery Engine",cameras:"Camera Manager",recordings:"Gravações",tv:"TV Mode",system:"Sistema",notifications:"Notificações"}[id]||"Open Home OS");
   if(id==="dashboard") refreshDashboardCameras(true);
   if(id==="connect") loadDevices();
   if(id==="rooms") loadRooms();
@@ -32,6 +32,7 @@ function showPage(id){
   if(id==="jarvis") loadJarvis();
   if(id==="network") loadNetwork();
   if(id==="cameras") loadCameraManager();
+  if(id==="recordings") loadRecordingsLibrary();
   if(id==="system") diag();
   if(id==="notifications") loadNotifications();
   loadStatus();
@@ -960,44 +961,18 @@ async function loadRecordingSettings(){
   if(!seg) return;
 
   try{
-    const [cfg,locations]=await Promise.all([
-      safeJson(apiBase()+"/api/cameras/recording/config?"+Date.now()),
-      safeJson(apiBase()+"/api/cameras/recording/storage-locations?"+Date.now())
-    ]);
-
+    const cfg=await safeJson(apiBase()+"/api/cameras/recording/config?"+Date.now());
     seg.value=String(cfg.segment_seconds||300);
     el("record-retention").value=cfg.retention_days||7;
     el("record-max-gb").value=cfg.max_storage_gb||20;
-    el("record-storage-path").value=cfg.recording_root||locations.current||"";
-
-    const select=el("record-storage-select");
-    const items=locations.items||[];
-    select.innerHTML=items.map((x,i)=>`<option value="${x.path}">${x.name} — ${x.path}</option>`).join("")
-      + '<option value="__custom__">Outro caminho...</option>';
-
-    const current=cfg.recording_root||locations.current||"";
-    const found=items.find(x=>x.path===current);
-    select.value=found?found.path:"__custom__";
-
-    setText("recording-storage-status",current?`Pasta atual: ${current}`:"");
+    el("record-storage-path").value=cfg.recording_root||"";
+    setText("recording-storage-status",cfg.recording_root?`Pasta atual: ${cfg.recording_root}`:"");
   }catch(e){
-    setText("recording-storage-status","Não foi possível carregar os locais de armazenamento.");
+    setText("recording-storage-status","Não foi possível carregar o local de armazenamento.");
   }
 }
 
-function applySelectedRecordingPath(){
-  const select=el("record-storage-select");
-  const input=el("record-storage-path");
-  if(!select || !input) return;
 
-  if(select.value==="__custom__"){
-    input.focus();
-    return;
-  }
-
-  input.value=select.value;
-  setText("recording-storage-status","Local selecionado: "+select.value);
-}
 
 async function testRecordingPath(){
   const path=el("record-storage-path")?.value||"";
@@ -1053,6 +1028,143 @@ async function cleanupRecordings(){
     body:"{}"
   });
   toast(r.ok?`Limpeza concluída. Uso atual: ${r.used_gb||0} GB`:"Falha na limpeza");
+}
+
+
+let folderPickerCurrent="";
+let folderPickerParent="";
+let recordingsLibraryItems=[];
+
+async function openFolderPicker(){
+  el("folder-picker-modal")?.classList.remove("hidden");
+  const current=el("record-storage-path")?.value||"";
+  await browseFolder(current);
+}
+
+function closeFolderPicker(){
+  el("folder-picker-modal")?.classList.add("hidden");
+}
+
+async function browseFolder(path=""){
+  const list=el("folder-picker-list");
+  if(list) list.innerHTML="<p>Carregando pastas...</p>";
+
+  try{
+    const data=await safeJson(apiBase()+"/api/storage/browse?path="+encodeURIComponent(path)+"&_="+Date.now());
+    folderPickerCurrent=data.current||"";
+    folderPickerParent=data.parent||"";
+    setText("folder-picker-current",folderPickerCurrent||"Locais disponíveis");
+    setText("folder-picker-space",
+      data.free_gb!=null?`${data.free_gb} GB livres de ${data.total_gb} GB`:""
+    );
+
+    const back=el("folder-picker-back");
+    if(back) back.disabled=!folderPickerParent;
+
+    if(list){
+      list.innerHTML=(data.items||[]).map(item=>`
+        <button class="folder-picker-item" onclick="browseFolder('${String(item.path).replace(/\\/g,"\\\\").replace(/'/g,"\\'")}')">
+          <span>📁</span>
+          <strong>${item.name}</strong>
+          <small>${item.path}</small>
+        </button>`).join("")||"<p>Nenhuma subpasta encontrada.</p>";
+    }
+  }catch(e){
+    if(list) list.innerHTML=`<p>Erro: ${e.message}</p>`;
+  }
+}
+
+async function browseFolderBack(){
+  if(folderPickerParent) await browseFolder(folderPickerParent);
+}
+
+function selectCurrentFolder(){
+  if(!folderPickerCurrent){
+    toast("Abra uma pasta antes de selecionar.");
+    return;
+  }
+  el("record-storage-path").value=folderPickerCurrent;
+  setText("recording-storage-status","Local selecionado: "+folderPickerCurrent);
+  closeFolderPicker();
+}
+
+async function loadRecordingsLibrary(){
+  setHTML("recordings-library-list","<p>Carregando gravações...</p>");
+  try{
+    const data=await safeJson(apiBase()+"/api/recordings?"+Date.now());
+    recordingsLibraryItems=data.items||[];
+    setText("recordings-library-status",`${recordingsLibraryItems.length} gravação(ões) • Pasta: ${data.root||"--"}`);
+
+    const cameras=[...new Set(recordingsLibraryItems.map(x=>x.camera_name).filter(Boolean))].sort();
+    const select=el("recordings-camera-filter");
+    if(select){
+      const current=select.value;
+      select.innerHTML='<option value="">Todas as câmeras</option>'+cameras.map(name=>`<option value="${name}">${name}</option>`).join("");
+      select.value=current;
+    }
+
+    renderRecordingsLibrary();
+  }catch(e){
+    setHTML("recordings-library-list",`<p>Erro: ${e.message}</p>`);
+  }
+}
+
+function renderRecordingsLibrary(){
+  const q=(el("recordings-search")?.value||"").toLowerCase();
+  const date=el("recordings-date")?.value||"";
+  const camera=el("recordings-camera-filter")?.value||"";
+
+  const items=recordingsLibraryItems.filter(x=>{
+    const hay=JSON.stringify(x).toLowerCase();
+    return (!q||hay.includes(q))
+      && (!date||String(x.modified||"").startsWith(date))
+      && (!camera||x.camera_name===camera);
+  });
+
+  setHTML("recordings-library-list",items.length?items.map(x=>`
+    <article class="recording-library-card">
+      <div>
+        <h4>🎥 ${x.camera_name||"Câmera"}</h4>
+        <p>${x.name}</p>
+        <small>${x.room||"Sem ambiente"} • ${x.modified} • ${x.size_mb} MB</small>
+      </div>
+      <div class="recording-library-actions">
+        <button onclick="playRecording('${x.id}')">▶ Reproduzir</button>
+        <button class="danger" onclick="deleteRecording('${x.id}')">Excluir</button>
+      </div>
+    </article>`).join(""):"<p>Nenhuma gravação encontrada.</p>");
+}
+
+function playRecording(id){
+  const item=recordingsLibraryItems.find(x=>x.id===id);
+  if(!item) return;
+  setText("recording-player-title",item.camera_name||"Reprodução");
+  setText("recording-player-meta",`${item.modified} • ${item.size_mb} MB`);
+  const video=el("recording-player-video");
+  video.src=apiBase()+"/api/recordings/play?id="+encodeURIComponent(id)+"&_="+Date.now();
+  el("recording-player-modal")?.classList.remove("hidden");
+  video.play().catch(()=>{});
+}
+
+function closeRecordingPlayer(){
+  const video=el("recording-player-video");
+  if(video){
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  el("recording-player-modal")?.classList.add("hidden");
+}
+
+async function deleteRecording(id){
+  if(!confirm("Excluir esta gravação?")) return;
+  const r=await safeJson(apiBase()+"/api/recordings/delete",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({id})
+  });
+  toast(r.message||"Gravação excluída");
+  await loadRecordingsLibrary();
 }
 
 loadStatus();

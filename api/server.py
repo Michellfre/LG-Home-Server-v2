@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.7.1 Recording Storage Selector"
-BUILD="001471"
+VERSION="Open Home OS v14.8 Recordings Library"
+BUILD="001480"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -1336,6 +1336,142 @@ def cleanup_recordings():
                 pass
     return {"ok":True,"used_gb":round(total/1024/1024/1024,2)}
 
+
+def allowed_browser_roots():
+    roots=[
+        Path.home(),
+        BASE,
+        Path("/storage"),
+        Path("/sdcard"),
+        Path("/mnt/media_rw")
+    ]
+    out=[]
+    seen=set()
+    for p in roots:
+        try:
+            rp=p.expanduser().resolve()
+            if rp.exists() and rp.is_dir() and str(rp) not in seen:
+                seen.add(str(rp))
+                out.append(rp)
+        except Exception:
+            pass
+    return out
+
+def path_is_allowed(path):
+    try:
+        rp=Path(path).expanduser().resolve()
+        for root in allowed_browser_roots():
+            try:
+                rp.relative_to(root)
+                return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+def browse_folders(path_value=""):
+    roots=allowed_browser_roots()
+    if not path_value:
+        return {
+            "ok":True,
+            "mode":"roots",
+            "current":"",
+            "parent":"",
+            "items":[{"name":p.name or str(p),"path":str(p),"type":"folder"} for p in roots]
+        }
+
+    try:
+        current=Path(path_value).expanduser().resolve()
+    except Exception:
+        return {"ok":False,"message":"Caminho inválido."}
+
+    if not path_is_allowed(current):
+        return {"ok":False,"message":"Acesso fora das pastas permitidas."}
+    if not current.exists() or not current.is_dir():
+        return {"ok":False,"message":"Pasta não encontrada."}
+
+    items=[]
+    try:
+        for p in sorted(current.iterdir(),key=lambda x:x.name.lower()):
+            if p.is_dir():
+                try:
+                    rp=p.resolve()
+                    if path_is_allowed(rp):
+                        items.append({"name":p.name,"path":str(rp),"type":"folder"})
+                except Exception:
+                    pass
+    except Exception as e:
+        return {"ok":False,"message":str(e)}
+
+    parent=str(current.parent) if path_is_allowed(current.parent) and current.parent!=current else ""
+    try:
+        usage=shutil.disk_usage(current)
+        free_gb=round(usage.free/1024/1024/1024,2)
+        total_gb=round(usage.total/1024/1024/1024,2)
+    except Exception:
+        free_gb=total_gb=None
+
+    return {
+        "ok":True,
+        "mode":"folder",
+        "current":str(current),
+        "parent":parent,
+        "items":items,
+        "free_gb":free_gb,
+        "total_gb":total_gb
+    }
+
+def all_recordings():
+    root=recording_root()
+    items=[]
+    cameras=load(CAMERAS,[])
+    camera_by_folder={}
+    for cam in cameras:
+        try:
+            camera_by_folder[str(recording_dir(cam).resolve())]=cam
+        except Exception:
+            pass
+
+    for p in root.rglob("*.mp4"):
+        try:
+            st=p.stat()
+            parent=str(p.parent.resolve())
+            cam=camera_by_folder.get(parent,{})
+            items.append({
+                "id":hashlib.sha256(str(p.resolve()).encode()).hexdigest()[:16],
+                "name":p.name,
+                "camera_id":cam.get("id",""),
+                "camera_name":cam.get("name") or p.parent.name,
+                "room":cam.get("room",""),
+                "size_mb":round(st.st_size/1024/1024,2),
+                "modified":time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(st.st_mtime)),
+                "timestamp":st.st_mtime,
+                "path":str(p.resolve())
+            })
+        except Exception:
+            pass
+    return sorted(items,key=lambda x:x["timestamp"],reverse=True)
+
+def recording_by_id(recording_id):
+    for item in all_recordings():
+        if item.get("id")==recording_id:
+            return item
+    return None
+
+def delete_recording(recording_id):
+    item=recording_by_id(recording_id)
+    if not item:
+        return {"ok":False,"message":"Gravação não encontrada."}
+    path=Path(item["path"])
+    if not path_is_allowed(path):
+        return {"ok":False,"message":"Arquivo fora da área permitida."}
+    try:
+        path.unlink()
+        return {"ok":True,"message":"Gravação excluída."}
+    except Exception as e:
+        return {"ok":False,"message":str(e)}
+
 LIVE_CLIENTS={}
 LIVE_LOCK=threading.Lock()
 
@@ -1451,6 +1587,57 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     try: process.kill()
                     except Exception: pass
+    def serve_recording(self,recording_id):
+        item=recording_by_id(recording_id)
+        if not item:
+            return self.js({"ok":False,"message":"Gravação não encontrada."},404)
+
+        path=Path(item["path"])
+        if not path.exists() or not path.is_file() or not path_is_allowed(path):
+            return self.js({"ok":False,"message":"Arquivo indisponível."},404)
+
+        size=path.stat().st_size
+        range_header=self.headers.get("Range","")
+        start=0
+        end=size-1
+        status=200
+
+        if range_header.startswith("bytes="):
+            try:
+                spec=range_header.split("=",1)[1]
+                a,b=spec.split("-",1)
+                if a.strip():
+                    start=int(a)
+                if b.strip():
+                    end=int(b)
+                status=206
+            except Exception:
+                start=0; end=size-1; status=200
+
+        start=max(0,min(start,size-1))
+        end=max(start,min(end,size-1))
+        length=end-start+1
+
+        self.send_response(status)
+        self.send_header("Content-Type","video/mp4")
+        self.send_header("Accept-Ranges","bytes")
+        self.send_header("Content-Length",str(length))
+        self.send_header("Cache-Control","no-store")
+        self.send_header("Access-Control-Allow-Origin","*")
+        if status==206:
+            self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
+        self.end_headers()
+
+        with path.open("rb") as f:
+            f.seek(start)
+            remaining=length
+            while remaining>0:
+                chunk=f.read(min(1024*1024,remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining-=len(chunk)
+
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
@@ -1467,6 +1654,14 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/cameras/recordings":
             camera_id=(q.get("id") or [""])[0]
             return self.js(recordings_list(camera_id))
+        if u.path=="/api/recordings":
+            return self.js({"ok":True,"items":all_recordings(),"root":str(recording_root())})
+        if u.path=="/api/recordings/play":
+            recording_id=(q.get("id") or [""])[0]
+            return self.serve_recording(recording_id)
+        if u.path=="/api/storage/browse":
+            path=(q.get("path") or [""])[0]
+            return self.js(browse_folders(path))
 
         routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/cameras/learned":lambda:{"items":list(learned_camera_profiles().values())},"/api/cameras/recording/config":lambda:recording_config(),"/api/cameras/recording/status":lambda:recording_status(),"/api/cameras/recording/storage-locations":lambda:storage_locations(),"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
@@ -1531,6 +1726,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(test_recording_path(d.get("path","")))
         if u.path=="/api/cameras/recording/cleanup":
             return self.js(cleanup_recordings())
+        if u.path=="/api/recordings/delete":
+            return self.js(delete_recording(str(d.get("id",""))))
 
 
 

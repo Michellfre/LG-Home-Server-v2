@@ -1,17 +1,17 @@
-# Open Home OS v14.7.1 — Recording Storage Selector
-
-Adiciona a escolha do local de salvamento das gravações.
+# Open Home OS v14.8 — Biblioteca de Gravações
 
 ## Novidades
 
-- lista locais de armazenamento detectados;
-- permite selecionar armazenamento interno, SD Card ou pasta personalizada;
-- campo para informar um caminho manual;
-- botão **Testar pasta**;
-- verifica permissão de escrita;
-- informa espaço livre e capacidade total;
-- salva o caminho escolhido nas configurações;
-- cada câmera continua recebendo sua própria subpasta.
+- seletor visual de pasta;
+- navegação por armazenamento interno, SD Card e pastas permitidas;
+- botão “Selecionar esta pasta”;
+- exibição do espaço livre;
+- nova página **Gravações** no menu lateral;
+- busca por câmera, ambiente ou nome do arquivo;
+- filtro por data e câmera;
+- reprodução integrada no navegador;
+- suporte a avanço do vídeo por Range HTTP;
+- exclusão de gravações pela interface.
 
 ## Arquivos para substituir
 
@@ -37,11 +37,3 @@ No Brave:
 ```text
 Ctrl + Shift + R
 ```
-
-## Exemplo de pasta no SD Card
-
-```text
-/storage/94D4-9BC3/OpenHomeRecordings
-```
-
-O caminho exato pode mudar conforme o cartão instalado no Android.

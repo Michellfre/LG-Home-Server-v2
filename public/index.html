@@ -1,6 +1,6 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.7.1</title><link rel="stylesheet" href="css/style.css?v=1471"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.7.1 Recording Storage</p></div></div>
-<a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.8</title><link rel="stylesheet" href="css/style.css?v=1480"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.8 Gravações</p></div></div>
+<a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('recordings')">🎥 Gravações</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v14.6.1 com Camera Manager e vídeo ao vivo.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
 <section id="dashboard" class="page active-page"><div class="hero-grid"><section class="panel hero"><h3>🏠 Casa</h3><div class="house-score"><span id="health">...</span><small id="health-label">saúde geral</small></div><p id="house-message">Carregando...</p></section><section class="panel"><h3>Open Home Connect</h3><div class="mini-grid"><div><b>Dispositivos</b><span id="dev-total">...</span></div><div><b>Online</b><span id="dev-online">...</span></div><div><b>Portas abertas</b><span id="open-doors">...</span></div><div><b>Descobertos</b><span id="discovered">...</span></div></div></section></div><div class="cards"><div class="card"><h3>📡 IP</h3><p id="ip">...</p></div><div class="card"><h3>💾 Interno</h3><p id="disk">...</p><div class="bar"><span id="disk-bar"></span></div></div><div class="card"><h3>💽 SD Card</h3><p id="sdcard">...</p><small id="sd-extra"></small></div><div class="card"><h3>🌡️ Ambiente</h3><p id="env-temp">...</p></div><div class="card"><h3>💧 Umidade</h3><p id="env-hum">...</p></div><div class="card"><h3>📶 Wi-Fi</h3><p id="wifi">...</p></div></div><section class="panel dashboard-camera-panel">
@@ -29,13 +29,11 @@
 <section id="cameras" class="page"><section class="panel"><h3>📹 Camera Manager</h3><p>Instalação, diagnóstico e gerenciamento das câmeras.</p><div id="camera-manager-list" class="module-grid"></div></section><section class="panel">
   <h3>⏺ Configurações de gravação</h3>
   <div class="recording-settings-grid">
-    <label>Local de salvamento
-      <select id="record-storage-select" onchange="applySelectedRecordingPath()">
-        <option value="">Carregando locais...</option>
-      </select>
-    </label>
-    <label class="recording-path-field">Caminho da pasta
-      <input id="record-storage-path" type="text" placeholder="/storage/.../OpenHomeRecordings">
+    <label class="recording-path-field">Local das gravações
+      <div class="folder-picker-row">
+        <input id="record-storage-path" type="text" readonly placeholder="Selecione uma pasta">
+        <button type="button" onclick="openFolderPicker()">Escolher pasta</button>
+      </div>
     </label>
     <button onclick="testRecordingPath()">Testar pasta</button>
     <label>Segmentos
@@ -56,7 +54,30 @@
     <button onclick="cleanupRecordings()">Limpar gravações antigas</button>
   </div>
   <div id="recording-storage-status" class="recording-storage-status"></div><div id="recording-config-status"></div>
-</section><section class="panel"><h3>Perfis compatíveis</h3><div id="camera-profile-list" class="module-grid"></div><div id="xiaomi-xiaofang-card" class="xiaomi-card hidden"></div></section></section><section id="tv" class="page"><section class="tv-screen"><div class="tv-top"><h1>Open Home OS</h1><div id="tv-clock" class="tv-clock">--:--</div></div><div class="tv-cards"><div><h3>Saúde</h3><p id="tv-health">...</p></div><div><h3>Dispositivos</h3><p id="tv-devs">...</p></div><div><h3>Ambiente</h3><p id="tv-env">...</p></div><div><h3>Umidade</h3><p id="tv-hum">...</p></div><div><h3>Portas</h3><p id="tv-doors">...</p></div><div><h3>SD</h3><p id="tv-sd">...</p></div></div></section></section>
+</section><section class="panel"><h3>Perfis compatíveis</h3><div id="camera-profile-list" class="module-grid"></div><div id="xiaomi-xiaofang-card" class="xiaomi-card hidden"></div></section></section>
+<section id="recordings" class="page">
+  <section class="panel">
+    <div class="panel-title-row">
+      <div>
+        <h3>🎥 Biblioteca de gravações</h3>
+        <p>Busque, reproduza e exclua vídeos gravados.</p>
+      </div>
+      <button onclick="loadRecordingsLibrary()">Atualizar</button>
+    </div>
+
+    <div class="recordings-filters">
+      <input id="recordings-search" placeholder="Buscar por câmera, ambiente ou arquivo" oninput="renderRecordingsLibrary()">
+      <input id="recordings-date" type="date" onchange="renderRecordingsLibrary()">
+      <select id="recordings-camera-filter" onchange="renderRecordingsLibrary()">
+        <option value="">Todas as câmeras</option>
+      </select>
+    </div>
+
+    <div id="recordings-library-status"></div>
+    <div id="recordings-library-list" class="recordings-library-list"></div>
+  </section>
+</section>
+<section id="tv" class="page"><section class="tv-screen"><div class="tv-top"><h1>Open Home OS</h1><div id="tv-clock" class="tv-clock">--:--</div></div><div class="tv-cards"><div><h3>Saúde</h3><p id="tv-health">...</p></div><div><h3>Dispositivos</h3><p id="tv-devs">...</p></div><div><h3>Ambiente</h3><p id="tv-env">...</p></div><div><h3>Umidade</h3><p id="tv-hum">...</p></div><div><h3>Portas</h3><p id="tv-doors">...</p></div><div><h3>SD</h3><p id="tv-sd">...</p></div></div></section></section>
 
 <section id="system" class="page"><section class="panel"><h3>⚙️ Sistema</h3><button onclick="diag()">Diagnóstico</button><button onclick="createBackup()">Backup</button><pre id="diagnostic">...</pre></section></section>
 <section id="notifications" class="page"><section class="panel"><h3>🔔 Notificações</h3><button onclick="clearNotifications()">Limpar</button><div id="notifications-list"></div></section></section></main>
@@ -90,7 +111,7 @@
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1471"></script>
+<div id="toast"></div><script src="js/app.js?v=1480"></script>
 <div id="camera-live-modal" class="camera-live-modal hidden" onclick="closeCameraLive(event)">
   <div class="camera-live-window" onclick="event.stopPropagation()">
     <div class="camera-live-header">
@@ -110,6 +131,37 @@
       <button onclick="toggleCameraLive()">Pausar/Continuar</button>
       <button onclick="cameraLiveFullscreen()">Tela cheia</button>
     </div>
+  </div>
+</div>
+
+<div id="folder-picker-modal" class="folder-picker-modal hidden">
+  <div class="folder-picker-window">
+    <div class="folder-picker-header">
+      <div>
+        <h2>📁 Escolher pasta</h2>
+        <small id="folder-picker-current">Selecione um local</small>
+      </div>
+      <button onclick="closeFolderPicker()">×</button>
+    </div>
+    <div class="folder-picker-actions">
+      <button id="folder-picker-back" onclick="browseFolderBack()">⬅ Voltar</button>
+      <button onclick="selectCurrentFolder()">Selecionar esta pasta</button>
+    </div>
+    <div id="folder-picker-space"></div>
+    <div id="folder-picker-list" class="folder-picker-list"></div>
+  </div>
+</div>
+
+<div id="recording-player-modal" class="recording-player-modal hidden">
+  <div class="recording-player-window">
+    <div class="recording-player-header">
+      <div>
+        <h2 id="recording-player-title">Reprodução</h2>
+        <small id="recording-player-meta"></small>
+      </div>
+      <button onclick="closeRecordingPlayer()">×</button>
+    </div>
+    <video id="recording-player-video" controls playsinline></video>
   </div>
 </div>
 </body></html>
