@@ -552,3 +552,24 @@ header{
   color:#94a3b8;
   white-space:nowrap;
 }
+
+
+/* v14.7.1 recording storage selector */
+.recording-path-field{
+  grid-column:span 2;
+}
+
+.recording-storage-status{
+  margin-top:12px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:#0f172a;
+  color:#cbd5e1;
+  word-break:break-all;
+}
+
+@media(max-width:760px){
+  .recording-path-field{
+    grid-column:span 1;
+  }
+}

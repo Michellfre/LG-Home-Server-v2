@@ -958,12 +958,69 @@ async function showCameraRecordings(id){
 async function loadRecordingSettings(){
   const seg=el("record-segment");
   if(!seg) return;
+
   try{
-    const cfg=await safeJson(apiBase()+"/api/cameras/recording/config?"+Date.now());
+    const [cfg,locations]=await Promise.all([
+      safeJson(apiBase()+"/api/cameras/recording/config?"+Date.now()),
+      safeJson(apiBase()+"/api/cameras/recording/storage-locations?"+Date.now())
+    ]);
+
     seg.value=String(cfg.segment_seconds||300);
     el("record-retention").value=cfg.retention_days||7;
     el("record-max-gb").value=cfg.max_storage_gb||20;
-  }catch(e){}
+    el("record-storage-path").value=cfg.recording_root||locations.current||"";
+
+    const select=el("record-storage-select");
+    const items=locations.items||[];
+    select.innerHTML=items.map((x,i)=>`<option value="${x.path}">${x.name} — ${x.path}</option>`).join("")
+      + '<option value="__custom__">Outro caminho...</option>';
+
+    const current=cfg.recording_root||locations.current||"";
+    const found=items.find(x=>x.path===current);
+    select.value=found?found.path:"__custom__";
+
+    setText("recording-storage-status",current?`Pasta atual: ${current}`:"");
+  }catch(e){
+    setText("recording-storage-status","Não foi possível carregar os locais de armazenamento.");
+  }
+}
+
+function applySelectedRecordingPath(){
+  const select=el("record-storage-select");
+  const input=el("record-storage-path");
+  if(!select || !input) return;
+
+  if(select.value==="__custom__"){
+    input.focus();
+    return;
+  }
+
+  input.value=select.value;
+  setText("recording-storage-status","Local selecionado: "+select.value);
+}
+
+async function testRecordingPath(){
+  const path=el("record-storage-path")?.value||"";
+  setText("recording-storage-status","Testando acesso à pasta...");
+
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/recording/test-path",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({path})
+    });
+
+    if(r.ok){
+      el("record-storage-path").value=r.path;
+      setText("recording-storage-status",`Pasta válida: ${r.path} • ${r.free_gb} GB livres de ${r.total_gb} GB`);
+      toast("Pasta de gravação validada");
+    }else{
+      setText("recording-storage-status",r.message||"Pasta inválida");
+      toast("Não foi possível usar essa pasta");
+    }
+  }catch(e){
+    setText("recording-storage-status",e.message||"Falha ao testar pasta");
+  }
 }
 
 async function saveRecordingSettings(){
@@ -971,6 +1028,7 @@ async function saveRecordingSettings(){
     segment_seconds:Number(el("record-segment")?.value||300),
     retention_days:Number(el("record-retention")?.value||7),
     max_storage_gb:Number(el("record-max-gb")?.value||20),
+    recording_root:el("record-storage-path")?.value||"",
     copy_video:true
   };
   const r=await safeJson(apiBase()+"/api/cameras/recording/config",{
@@ -978,8 +1036,14 @@ async function saveRecordingSettings(){
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify(payload)
   });
-  setText("recording-config-status",r.ok?"Configurações salvas.":"Falha ao salvar.");
-  toast(r.ok?"Configurações de gravação salvas":"Falha ao salvar");
+  if(r.ok){
+    setText("recording-config-status","Configurações salvas.");
+    setText("recording-storage-status","Pasta atual: "+(r.config?.recording_root||payload.recording_root));
+    toast("Configurações de gravação salvas");
+  }else{
+    setText("recording-config-status",r.message||"Falha ao salvar.");
+    toast("Falha ao salvar");
+  }
 }
 
 async function cleanupRecordings(){

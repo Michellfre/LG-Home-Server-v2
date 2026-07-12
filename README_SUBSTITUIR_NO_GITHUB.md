@@ -1,19 +1,17 @@
-# Open Home OS v14.7 — Camera Recording
+# Open Home OS v14.7.1 — Recording Storage Selector
 
-Adiciona gravação manual das câmeras RTSP no armazenamento do servidor.
+Adiciona a escolha do local de salvamento das gravações.
 
-## Recursos
+## Novidades
 
-- botão **Gravar**;
-- botão **Parar**;
-- arquivos MP4 divididos em segmentos;
-- configuração de 1, 5, 10 ou 30 minutos por arquivo;
-- retenção em dias;
-- limite máximo de armazenamento;
-- limpeza automática/manual de gravações antigas;
-- listagem dos arquivos gravados por câmera;
-- gravação usa o transporte salvo, como UDP para Yoosee;
-- vídeo é copiado sem recodificação quando possível, reduzindo uso de CPU.
+- lista locais de armazenamento detectados;
+- permite selecionar armazenamento interno, SD Card ou pasta personalizada;
+- campo para informar um caminho manual;
+- botão **Testar pasta**;
+- verifica permissão de escrita;
+- informa espaço livre e capacidade total;
+- salva o caminho escolhido nas configurações;
+- cada câmera continua recebendo sua própria subpasta.
 
 ## Arquivos para substituir
 
@@ -22,7 +20,7 @@ Adiciona gravação manual das câmeras RTSP no armazenamento do servidor.
 - `public/js/app.js`
 - `public/css/style.css`
 
-## Atualização no Termux
+## Atualização
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -40,10 +38,10 @@ No Brave:
 Ctrl + Shift + R
 ```
 
-## Onde ficam as gravações
+## Exemplo de pasta no SD Card
 
 ```text
-~/LG-Home-Server-v2/recordings/
+/storage/94D4-9BC3/OpenHomeRecordings
 ```
 
-Cada câmera recebe sua própria pasta.
+O caminho exato pode mudar conforme o cartão instalado no Android.

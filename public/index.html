@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.7</title><link rel="stylesheet" href="css/style.css?v=1470"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.7 Camera Recording</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v14.7.1</title><link rel="stylesheet" href="css/style.css?v=1471"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v14.7.1 Recording Storage</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('cameras')">📹 Câmeras</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v14.6.1 com Camera Manager e vídeo ao vivo.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
@@ -29,6 +29,15 @@
 <section id="cameras" class="page"><section class="panel"><h3>📹 Camera Manager</h3><p>Instalação, diagnóstico e gerenciamento das câmeras.</p><div id="camera-manager-list" class="module-grid"></div></section><section class="panel">
   <h3>⏺ Configurações de gravação</h3>
   <div class="recording-settings-grid">
+    <label>Local de salvamento
+      <select id="record-storage-select" onchange="applySelectedRecordingPath()">
+        <option value="">Carregando locais...</option>
+      </select>
+    </label>
+    <label class="recording-path-field">Caminho da pasta
+      <input id="record-storage-path" type="text" placeholder="/storage/.../OpenHomeRecordings">
+    </label>
+    <button onclick="testRecordingPath()">Testar pasta</button>
     <label>Segmentos
       <select id="record-segment">
         <option value="60">1 minuto</option>
@@ -46,7 +55,7 @@
     <button onclick="saveRecordingSettings()">Salvar configurações</button>
     <button onclick="cleanupRecordings()">Limpar gravações antigas</button>
   </div>
-  <div id="recording-config-status"></div>
+  <div id="recording-storage-status" class="recording-storage-status"></div><div id="recording-config-status"></div>
 </section><section class="panel"><h3>Perfis compatíveis</h3><div id="camera-profile-list" class="module-grid"></div><div id="xiaomi-xiaofang-card" class="xiaomi-card hidden"></div></section></section><section id="tv" class="page"><section class="tv-screen"><div class="tv-top"><h1>Open Home OS</h1><div id="tv-clock" class="tv-clock">--:--</div></div><div class="tv-cards"><div><h3>Saúde</h3><p id="tv-health">...</p></div><div><h3>Dispositivos</h3><p id="tv-devs">...</p></div><div><h3>Ambiente</h3><p id="tv-env">...</p></div><div><h3>Umidade</h3><p id="tv-hum">...</p></div><div><h3>Portas</h3><p id="tv-doors">...</p></div><div><h3>SD</h3><p id="tv-sd">...</p></div></div></section></section>
 
 <section id="system" class="page"><section class="panel"><h3>⚙️ Sistema</h3><button onclick="diag()">Diagnóstico</button><button onclick="createBackup()">Backup</button><pre id="diagnostic">...</pre></section></section>
@@ -81,7 +90,7 @@
 </details>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1470"></script>
+<div id="toast"></div><script src="js/app.js?v=1471"></script>
 <div id="camera-live-modal" class="camera-live-modal hidden" onclick="closeCameraLive(event)">
   <div class="camera-live-window" onclick="event.stopPropagation()">
     <div class="camera-live-header">
