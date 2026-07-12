@@ -1,4 +1,4 @@
-# Open Home OS v14.2 — Camera Manager Diagnostics
+# Open Home OS v14.3 — Xiaomi Xiao Fang Support
 
 Substitua no GitHub:
 
@@ -8,17 +8,26 @@ Substitua no GitHub:
 - `public/js/app.js`
 - `config/camera_profiles.json`
 
+## Xiaomi adicionada
+
+Dados usados no perfil:
+
+- Modelo: Xiaomi Xiao Fang Smart Camera
+- IP atual: `192.168.1.4`
+- MAC: `34:CE:00:D1:60:F4`
+- Prefixo reconhecido: `34:CE:00`
+
 ## Novidades
 
-- diagnóstico RTSP direto com comandos `OPTIONS` e `DESCRIBE`;
-- identificação do servidor RTSP, métodos públicos e autenticação;
-- confirmação de credenciais e SDP antes do teste pesado com `ffprobe`;
-- diagnóstico completo por dispositivo;
-- recomendações claras na interface;
-- suporte mantido para Yoosee e Xiaomi Xiao Fang;
-- nenhum teste automático de senhas.
+- identificação automática da Xiaomi Xiao Fang pelo MAC;
+- perfil dedicado no Camera Manager;
+- distinção entre firmware original e firmware modificado/Dafang;
+- diagnóstico de portas 22, 80, 443, 554, 8554, 8080, 8000 e 8899;
+- relatório de compatibilidade local;
+- indicação de Mi Home, RTSP, ONVIF, HTTP e SSH;
+- cartão específico da Xiao Fang no Camera Manager.
 
-## Atualização no Termux
+## Atualização
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -29,10 +38,4 @@ nginx -s reload
 bash scripts/start_api.sh
 ```
 
-No Brave: `Ctrl + F5`.
-
-Fluxo recomendado:
-1. Diagnóstico RTSP;
-2. Teste rápido;
-3. Busca profunda;
-4. Testar e adicionar.
+No Brave, use `Ctrl + F5`.

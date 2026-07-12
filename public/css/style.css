@@ -178,3 +178,42 @@ header{
   background:rgba(15,23,42,.8);
   color:#dbeafe;
 }
+
+
+/* v14.3 Xiaomi Xiao Fang */
+.xiaomi-card{
+  margin-top:18px;
+  padding:20px;
+  border:1px solid #3b82f6;
+  border-radius:18px;
+  background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(30,41,59,.92));
+}
+.xiaomi-card.hidden{display:none}
+.xiaomi-card h3{margin-top:0}
+.xiaomi-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+.xiaomi-grid span{
+  padding:12px;
+  border-radius:12px;
+  background:#0f172a;
+  color:#94a3b8;
+}
+.xiaomi-grid b{
+  display:block;
+  margin-top:5px;
+  color:#f8fafc;
+  word-break:break-word;
+}
+.xiaomi-note{
+  margin:14px 0 0;
+  padding:12px;
+  border-left:4px solid #60a5fa;
+  background:rgba(30,64,175,.18);
+  color:#dbeafe;
+}
+@media(max-width:760px){
+  .xiaomi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

@@ -508,6 +508,7 @@ async function analyzeCamera(index){
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({device:dev,preset:"auto"})
     });
+
     const caps=r.capabilities||{};
     const profile=caps.profile?.name||"Não identificado";
     const lines=[
@@ -517,11 +518,50 @@ async function analyzeCamera(index){
       `RTSP: ${r.rtsp?.ok?"pronto":r.rtsp?.message||"não confirmado"}`,
       `ONVIF: ${r.onvif?.ok?"localizado":"não confirmado"}`
     ];
+
+    if(r.xiaomi){
+      lines.push(
+        "",
+        "Xiaomi Xiao Fang",
+        `Firmware provável: ${r.xiaomi.firmware_mode}`,
+        `Compatibilidade local: ${r.xiaomi.compatibility}%`,
+        `Mi Home: ${r.xiaomi.capabilities?.mi_home?"sim":"não"}`,
+        `RTSP: ${r.xiaomi.capabilities?.rtsp?"detectado":"não detectado"}`,
+        `ONVIF: ${r.xiaomi.capabilities?.onvif?"possível":"não detectado"}`
+      );
+    }
+
     if(r.recommendations?.length) lines.push("",...r.recommendations.map(x=>"• "+x));
     alert(lines.join("\n"));
   }catch(e){
     toast("Falha no diagnóstico: "+e.message);
   }
+}
+
+
+function renderXiaomiXiaoFang(dev){
+  const card=el("xiaomi-xiaofang-card");
+  if(!card) return;
+  if(!dev){
+    card.classList.add("hidden");
+    card.innerHTML="";
+    return;
+  }
+
+  const ports=(dev.ports||[]).join(", ")||"nenhuma detectada";
+  card.classList.remove("hidden");
+  card.innerHTML=`
+    <h3>📷 Xiaomi Xiao Fang</h3>
+    <div class="xiaomi-grid">
+      <span>IP<b>${dev.ip||"--"}</b></span>
+      <span>MAC<b>${dev.mac||"--"}</b></span>
+      <span>Fabricante<b>Xiaomi</b></span>
+      <span>Modelo<b>Xiao Fang Smart Camera</b></span>
+      <span>Portas<b>${ports}</b></span>
+      <span>Integração<b>Mi Home / diagnóstico local</b></span>
+    </div>
+    <p class="xiaomi-note">O firmware original geralmente não expõe RTSP ou ONVIF. Caso as portas 22, 554 ou 8554 apareçam, o firmware pode estar modificado.</p>
+  `;
 }
 
 async function loadCameraManager(){
@@ -540,3 +580,5 @@ async function deleteCamera(id){
 loadStatus();
 setInterval(loadStatus,5000);
 loadDiscoveryState();
+
+setTimeout(()=>{try{renderXiaomiXiaoFang((window.network_list||[]).find(d=>(d.mac||'').toUpperCase().startsWith('34:CE:00')))}catch(e){}},2500);

@@ -1,5 +1,5 @@
 {
-  "version": "14.2",
+  "version": "14.3",
   "profiles": [
     {
       "id": "yoosee",
@@ -56,10 +56,11 @@
     },
     {
       "id": "xiaomi_xiaofang",
-      "name": "Xiaomi Xiao Fang",
+      "name": "Xiaomi Xiao Fang Smart Camera",
       "vendors": [
         "xiaomi",
-        "chuangmi"
+        "chuangmi",
+        "xiaofang"
       ],
       "mac_prefixes": [
         "34:CE:00"
@@ -67,23 +68,35 @@
       "ports": [
         22,
         80,
+        81,
         443,
         554,
         8554,
-        8080
+        8080,
+        8000,
+        8899
       ],
       "rtsp_paths": [
         "/unicast",
         "/live/ch00_0",
+        "/live/ch00_1",
         "/stream1",
+        "/stream2",
         "/onvif1"
       ],
       "onvif_ports": [
         80,
         8080,
+        8000,
         8899
       ],
-      "notes": "Firmware original costuma ser fechado; Dafang Hacks pode liberar RTSP/ONVIF."
+      "notes": "MAC 34:CE:00 reconhecido como Xiaomi Xiao Fang. Firmware original costuma manter RTSP/ONVIF fechados; Dafang Hacks pode liberá-los.",
+      "capabilities": {
+        "mi_home": true,
+        "audio": "likely",
+        "motion_detection": "likely",
+        "snapshot": "unknown"
+      }
     },
     {
       "id": "hikvision",

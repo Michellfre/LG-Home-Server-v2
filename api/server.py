@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.2 Camera Manager Diagnostics"
-BUILD="001420"
+VERSION="Open Home OS v14.3 Xiaomi XiaoFang Support"
+BUILD="001430"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -547,6 +547,82 @@ def rtsp_server_diagnostics(d):
         "results":results
     }
 
+
+def xiaomi_xiaofang_probe(device):
+    ip=str(device.get("ip") or "").strip()
+    mac=(device.get("mac") or "").upper()
+    ports=sorted(set(device.get("ports") or []))
+
+    identified=mac.startswith("34:CE:00")
+    if not ports and ip:
+        ports=scan_ports(ip,[22,80,81,443,554,8554,8080,8000,8899])
+
+    firmware_mode="original_limited"
+    rtsp=False
+    onvif=False
+    web=False
+    ssh=False
+
+    if 22 in ports:
+        ssh=True
+    if 80 in ports or 8080 in ports or 443 in ports:
+        web=True
+    if 554 in ports or 8554 in ports:
+        rtsp=True
+    if 8899 in ports or 8000 in ports:
+        onvif=True
+
+    if ssh or rtsp or onvif:
+        firmware_mode="modified_or_dafang"
+
+    compatibility=30
+    if identified:
+        compatibility+=25
+    if rtsp:
+        compatibility+=25
+    if onvif:
+        compatibility+=10
+    if web:
+        compatibility+=5
+    if ssh:
+        compatibility+=5
+    compatibility=min(100,compatibility)
+
+    recommendations=[]
+    if firmware_mode=="original_limited":
+        recommendations.append("Firmware original Xiaomi provável: RTSP e ONVIF normalmente não ficam expostos.")
+        recommendations.append("A câmera continua utilizável pelo aplicativo Mi Home, mas a integração local pode ser limitada.")
+    else:
+        recommendations.append("Firmware modificado ou Dafang Hacks provável: serviços locais foram detectados.")
+        if rtsp:
+            recommendations.append("RTSP detectado; execute o teste de vídeo.")
+        if onvif:
+            recommendations.append("ONVIF pode estar disponível.")
+        if ssh:
+            recommendations.append("SSH detectado, indicando firmware modificado.")
+
+    return {
+        "identified":identified,
+        "manufacturer":"Xiaomi",
+        "model":"Xiao Fang Smart Camera",
+        "mac":mac,
+        "ip":ip,
+        "ports":ports,
+        "firmware_mode":firmware_mode,
+        "capabilities":{
+            "rtsp":rtsp,
+            "onvif":onvif,
+            "web":web,
+            "ssh":ssh,
+            "mi_home":True,
+            "snapshot":"unknown",
+            "audio":"likely",
+            "motion_detection":"likely"
+        },
+        "compatibility":compatibility,
+        "recommendations":recommendations
+    }
+
 def camera_full_diagnostic(d):
     device=d.get("device",d)
     caps=camera_capabilities(device)
@@ -577,6 +653,13 @@ def camera_full_diagnostic(d):
         recommendation.append("ONVIF não foi confirmado.")
     if rtsp.get("ok"):
         recommendation.append("RTSP pronto para configuração.")
+    xiaomi=None
+    profile=(caps.get("profile") or {}).get("id")
+    mac=(device.get("mac") or "").upper()
+    if profile=="xiaomi_xiaofang" or mac.startswith("34:CE:00"):
+        xiaomi=xiaomi_xiaofang_probe({**device,"ports":ports})
+        recommendation.extend(xiaomi.get("recommendations",[]))
+
     return {
         "ok":True,
         "device":device,
@@ -584,7 +667,8 @@ def camera_full_diagnostic(d):
         "capabilities":caps,
         "rtsp":rtsp,
         "onvif":onvif,
-        "recommendations":recommendation
+        "xiaomi":xiaomi,
+        "recommendations":list(dict.fromkeys(recommendation))
     }
 
 def ffprobe_rtsp(url,timeout=7,transport="tcp"):
@@ -935,6 +1019,10 @@ class H(BaseHTTPRequestHandler):
             return self.js(rtsp_server_diagnostics(d))
         if u.path=="/api/cameras/full-diagnostic":
             return self.js(camera_full_diagnostic(d))
+        if u.path=="/api/cameras/xiaomi/xiaofang":
+            dev=d.get("device",d)
+            return self.js({"ok":True,"xiaomi":xiaomi_xiaofang_probe(dev)})
+
 
         if u.path=="/api/cameras/delete":
             cid=d.get("id")
