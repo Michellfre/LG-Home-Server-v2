@@ -269,19 +269,47 @@ function currentFilteredNetwork(){
 function openCameraSetup(index){
   const dev=currentFilteredNetwork()[index];
   if(!dev) return;
+
+  const modal=el("camera-modal");
+  if(!modal){
+    toast("Janela de configuração não encontrada.");
+    return;
+  }
+
   el("cam-name").value=dev.name==="Câmera RTSP"?`Câmera ${dev.ip}`:dev.name;
   el("cam-room").value="Garagem";
   el("cam-ip").value=dev.ip||"";
-  el("cam-port").value=(dev.ports||[]).includes(554)?554:554;
+  el("cam-port").value=554;
   el("cam-user").value="";
   el("cam-password").value="";
   el("cam-path").value="";
+
   setText("camera-device-info",`${dev.ip} • Portas ${(dev.ports||[]).join(", ")} • ${dev.vendor||"fabricante não identificado"}`);
   setText("camera-test-result","Aguardando teste...");
-  el("camera-modal").classList.remove("hidden");
+
+  modal.classList.remove("hidden");
+  modal.style.display="flex";
+  modal.setAttribute("aria-hidden","false");
+  document.body.classList.add("modal-open");
+
+  window.setTimeout(()=>{
+    const first=el("cam-name");
+    if(first) first.focus();
+  },50);
 }
-function closeCameraModal(){
-  el("camera-modal")?.classList.add("hidden");
+
+function closeCameraModal(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const modal=el("camera-modal");
+  if(!modal) return;
+
+  modal.classList.add("hidden");
+  modal.style.display="none";
+  modal.setAttribute("aria-hidden","true");
+  document.body.classList.remove("modal-open");
 }
 function cameraPayload(){
   return {
@@ -316,6 +344,36 @@ async function saveCameraRTSP(){
   }catch(e){
     setText("camera-test-result","Erro: "+e.message);
   }
+}
+
+
+function installCameraModalHandlers(){
+  const modal=el("camera-modal");
+  const closeButton=el("camera-modal-close");
+  if(!modal) return;
+
+  modal.setAttribute("aria-hidden", modal.classList.contains("hidden") ? "true" : "false");
+
+  if(closeButton){
+    closeButton.addEventListener("click",closeCameraModal);
+    closeButton.addEventListener("touchend",closeCameraModal,{passive:false});
+  }
+
+  modal.addEventListener("click",(event)=>{
+    if(event.target===modal) closeCameraModal(event);
+  });
+
+  document.addEventListener("keydown",(event)=>{
+    if(event.key==="Escape" && !modal.classList.contains("hidden")){
+      closeCameraModal(event);
+    }
+  });
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded",installCameraModalHandlers);
+}else{
+  installCameraModalHandlers();
 }
 
 loadStatus();

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css"></head><body>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1351"></head><body>
 <aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v13.5 RTSP Camera</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v13.5 com correção JavaScript e Discovery PRO.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
@@ -19,10 +19,10 @@
 
 <section id="system" class="page"><section class="panel"><h3>⚙️ Sistema</h3><button onclick="diag()">Diagnóstico</button><button onclick="createBackup()">Backup</button><pre id="diagnostic">...</pre></section></section>
 <section id="notifications" class="page"><section class="panel"><h3>🔔 Notificações</h3><button onclick="clearNotifications()">Limpar</button><div id="notifications-list"></div></section></section></main>
-<div id="camera-modal" class="modal hidden">
+<div id="camera-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="camera-modal-title">
   <div class="modal-card">
-    <button class="modal-close" onclick="closeCameraModal()">✕</button>
-    <h2>📹 Configurar câmera RTSP</h2>
+    <button id="camera-modal-close" type="button" class="modal-close" aria-label="Fechar configuração da câmera" onclick="closeCameraModal(event)">✕</button>
+    <h2 id="camera-modal-title">📹 Configurar câmera RTSP</h2>
     <p id="camera-device-info">Informe as credenciais da própria câmera.</p>
     <div class="camera-form">
       <label>Nome<input id="cam-name" placeholder="Câmera Garagem"></label>
@@ -40,4 +40,4 @@
     <pre id="camera-test-result">Aguardando teste...</pre>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=135"></script></body></html>
+<div id="toast"></div><script src="js/app.js?v=1351"></script></body></html>
