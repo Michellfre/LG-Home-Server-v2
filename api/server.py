@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.6.3 Dashboard Image Fix"
-BUILD="001463"
+VERSION="Open Home OS v14.6.4 Camera Center Fix"
+BUILD="001464"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"

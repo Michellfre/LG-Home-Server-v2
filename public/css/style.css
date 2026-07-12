@@ -482,3 +482,15 @@ header{
     max-height:none;
   }
 }
+
+
+/* v14.6.4 Camera Center */
+.dashboard-camera-card.compact{
+  max-width:210px;
+}
+.dashboard-camera-preview.compact{
+  max-height:118px;
+}
+.dashboard-camera-grid{
+  grid-template-columns:repeat(auto-fill,minmax(175px,210px));
+}

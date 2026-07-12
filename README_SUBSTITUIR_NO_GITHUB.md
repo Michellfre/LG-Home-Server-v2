@@ -1,24 +1,29 @@
-# Open Home OS v14.6.3 — Dashboard Image Fix
+# Open Home OS v14.6.4 — Camera Center Fix
 
-Corrige a mensagem “Falha ao atualizar” nas miniaturas do Dashboard.
+Corrige o erro:
 
-## Causa corrigida
+```text
+fetchCameraSnapshot is not defined
+```
 
-A imagem em Base64 recebia um fragmento de cache (`#data`), o que podia tornar o JPEG inválido no navegador.
+## O que mudou
+
+- criada uma biblioteca única `CameraCenter`;
+- Dashboard, página Câmeras e vídeo ao vivo passam a usar as mesmas funções;
+- adicionada compatibilidade com chamadas antigas por `fetchCameraSnapshot`;
+- corrigida atualização das miniaturas;
+- mensagens reais do backend continuam sendo exibidas;
+- cartões do Dashboard ficaram um pouco menores;
+- exclusão da câmera também atualiza o Dashboard.
 
 ## Arquivos para substituir
 
 - `api/server.py`
 - `public/index.html`
 - `public/js/app.js`
+- `public/css/style.css`
 
-## Outras melhorias
-
-- captura FFmpeg mais tolerante a streams UDP;
-- maior tempo de análise do RTSP;
-- mensagem real do erro exibida no cartão.
-
-## Atualização
+## Atualização no Termux
 
 ```bash
 cd ~/LG-Home-Server-v2
@@ -35,4 +40,4 @@ No Brave:
 Ctrl + Shift + R
 ```
 
-Depois clique em **Atualizar** na miniatura.
+Depois abra o Dashboard e clique em **Atualizar todas**.

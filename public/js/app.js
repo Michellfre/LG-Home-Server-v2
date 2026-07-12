@@ -615,12 +615,9 @@ async function loadCameraManager(){
 async function loadCameraSnapshot(id){
   const box=el("preview-"+id);
   if(box) box.innerHTML="<span>Capturando...</span>";
+
   try{
-    const r=await safeJson(apiBase()+"/api/cameras/snapshot",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({id})
-    });
+    const r=await CameraCenter.snapshot(id);
     if(r.ok && r.data){
       box.innerHTML=`<img src="data:${r.mime||'image/jpeg'};base64,${r.data}" alt="Prévia da câmera">`;
     }else{
@@ -633,13 +630,47 @@ async function loadCameraSnapshot(id){
 
 async function deleteCamera(id){
   if(!confirm("Excluir esta câmera?")) return;
-  await safeJson(apiBase()+"/api/cameras/delete",{method:"POST",body:JSON.stringify({id})});
-  loadCameraManager(); loadStatus();
+  await CameraCenter.remove(id);
+  loadCameraManager();
+  refreshDashboardCameras(true);
+  loadStatus();
 }
 
 
 
+
+const CameraCenter={
+  async list(){
+    return await safeJson(apiBase()+"/api/cameras?cache="+Date.now());
+  },
+
+  async snapshot(id){
+    return await safeJson(apiBase()+"/api/cameras/snapshot",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id})
+    });
+  },
+
+  liveUrl(id){
+    return apiBase()+"/api/cameras/live.mjpeg?id="+encodeURIComponent(id)+"&fps=6&width=960&_="+Date.now();
+  },
+
+  async remove(id){
+    return await safeJson(apiBase()+"/api/cameras/delete",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id})
+    });
+  }
+};
+
 let dashboardCameraLoading=false;
+
+
+async function fetchCameraSnapshot(id){
+  return await CameraCenter.snapshot(id);
+}
 
 async function refreshDashboardCameras(force=false){
   const grid=el("dashboard-camera-grid");
@@ -661,7 +692,7 @@ async function refreshDashboardCameras(force=false){
   try{
     grid.innerHTML='<p class="camera-dashboard-loading">Atualizando câmeras...</p>';
 
-    const data=await safeJson(apiBase()+"/api/cameras?cache="+Date.now());
+    const data=await CameraCenter.list();
     const cameras=Array.isArray(data.items)?data.items:[];
 
     if(!cameras.length){
@@ -714,23 +745,26 @@ async function refreshDashboardCamera(id,force=false){
   if(card) card.classList.add("camera-refreshing");
 
   try{
-    const r=await fetchCameraSnapshot(id);
-    if(r.ok && r.data && img){
-      const dataUrl=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
-      img.src=dataUrl;
+    const r=await CameraCenter.snapshot(id);
+
+    if(r && r.ok && r.data && img){
+      img.src=`data:${r.mime||"image/jpeg"};base64,${r.data}`;
       img.style.display="block";
+
       if(placeholder) placeholder.style.display="none";
       if(card){
         card.classList.remove("camera-offline");
         card.classList.add("camera-online");
       }
-    }else{
-      if(placeholder){
-        placeholder.style.display="block";
-        placeholder.textContent=r.message||"Imagem indisponível";
-      }
-      if(card) card.classList.add("camera-offline");
+      return;
     }
+
+    const message=(r && r.message) ? r.message : "Imagem indisponível";
+    if(placeholder){
+      placeholder.style.display="block";
+      placeholder.textContent=message;
+    }
+    if(card) card.classList.add("camera-offline");
   }catch(e){
     if(placeholder){
       placeholder.style.display="block";
@@ -749,13 +783,12 @@ let cameraLiveCurrent=null;
 let cameraLiveNonce=0;
 
 function cameraLiveUrl(camera){
-  const base=apiBase()+"/api/cameras/live.mjpeg";
   cameraLiveNonce++;
-  return `${base}?id=${encodeURIComponent(camera.id)}&fps=6&width=960&_=${Date.now()}-${cameraLiveNonce}`;
+  return CameraCenter.liveUrl(camera.id)+"-"+cameraLiveNonce;
 }
 
 async function openCameraLive(id){
-  const data=await safeJson(apiBase()+"/api/cameras?"+Date.now());
+  const data=await CameraCenter.list();
   const camera=(data.items||[]).find(c=>String(c.id)===String(id));
   if(!camera){
     toast("Câmera não encontrada");
