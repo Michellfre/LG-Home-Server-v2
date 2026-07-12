@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v14.3 Xiaomi XiaoFang Support"
-BUILD="001430"
+VERSION="Open Home OS v14.4 Camera Manager Learning"
+BUILD="001440"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -25,6 +25,7 @@ for p in [WEB,CONFIG,DATA,LOGS,*AREAS.values()]:
 SETTINGS=CONFIG/"settings.json"; CAMERAS=CONFIG/"cameras.json"; EVENTS=CONFIG/"events.json"; NOTES=CONFIG/"notifications.json"; JARVIS=CONFIG/"jarvis.json"
 DEVICES=CONFIG/"devices.json"; ROOMS=CONFIG/"rooms.json"; TUYA_CFG=CONFIG/"tuya_cloud.json"; TUYA_CACHE=CONFIG/"tuya_cache.json"; NETWORK=CONFIG/"network_devices.json"; DISCOVERY_STATE=CONFIG/"discovery_state.json"
 CAMERA_PROFILES=Path(__file__).resolve().parent.parent/"config"/"camera_profiles.json"
+CAMERA_LEARNED=CONFIG/"camera_learned.json"
 
 def ensure(p,d):
     if not p.exists():
@@ -721,6 +722,73 @@ def classify_rtsp_error(message):
         return "invalid_stream"
     return "unknown"
 
+
+def learned_camera_key(ip,port,preset):
+    return f"{str(ip).strip()}:{int(port or 554)}:{str(preset or 'auto').lower()}"
+
+def learned_camera_profiles():
+    return load(CAMERA_LEARNED,{})
+
+def save_learned_camera(ip,port,preset,path,transport,stream=None):
+    data=learned_camera_profiles()
+    key=learned_camera_key(ip,port,preset)
+    data[key]={
+        "ip":str(ip),
+        "port":int(port or 554),
+        "preset":str(preset or "auto").lower(),
+        "path":path,
+        "transport":transport or "auto",
+        "stream":stream or {},
+        "updated":time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save(CAMERA_LEARNED,data)
+    return data[key]
+
+def get_learned_camera(ip,port,preset):
+    return learned_camera_profiles().get(learned_camera_key(ip,port,preset))
+
+def sanitize_rtsp_text(text,username="",password=""):
+    value=str(text or "")
+    if password:
+        value=value.replace(password,"***")
+    if username:
+        value=value.replace(f"{username}:***@", "***:***@")
+        value=value.replace(f"{username}:", "***:")
+    value=re.sub(r"rtsp://[^/@\s:]+:[^/@\s]+@", "rtsp://***:***@", value)
+    return value
+
+def camera_snapshot(camera):
+    ip=str(camera.get("ip","")).strip()
+    port=int(camera.get("port") or 554)
+    path=str(camera.get("path","")).strip()
+    user=str(camera.get("username",""))
+    password=str(camera.get("password",""))
+    transport=str(camera.get("transport","udp") or "udp")
+    if not ip or not path:
+        return {"ok":False,"message":"Câmera sem IP ou caminho RTSP."}
+
+    url=rtsp_url(ip,port,path,user,password)
+    cmd=["ffmpeg","-hide_banner","-loglevel","error"]
+    if transport in ["tcp","udp"]:
+        cmd += ["-rtsp_transport",transport]
+    cmd += ["-i",url,"-frames:v","1","-f","image2pipe","-vcodec","mjpeg","-"]
+    try:
+        p=subprocess.run(cmd,capture_output=True,timeout=12)
+        if p.returncode==0 and p.stdout:
+            return {
+                "ok":True,
+                "mime":"image/jpeg",
+                "data":base64.b64encode(p.stdout).decode(),
+                "updated":time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+        return {"ok":False,"message":sanitize_rtsp_text((p.stderr or b"Falha ao capturar imagem.").decode("utf-8","ignore"),user,password)[-500:]}
+    except FileNotFoundError:
+        return {"ok":False,"message":"ffmpeg não instalado. Execute: pkg install ffmpeg"}
+    except subprocess.TimeoutExpired:
+        return {"ok":False,"message":"Tempo esgotado ao capturar snapshot."}
+    except Exception as e:
+        return {"ok":False,"message":sanitize_rtsp_text(str(e),user,password)}
+
 def test_rtsp_config(d):
     ip=str(d.get("ip","")).strip()
     if not ip:
@@ -733,8 +801,12 @@ def test_rtsp_config(d):
     preset=str(d.get("preset","auto") or "auto").lower()
     deep=bool(d.get("deep",False))
 
+    learned=get_learned_camera(ip,port,preset)
     base_paths=[manual] if manual else RTSP_PRESETS.get(preset,RTSP_COMMON_PATHS)
     paths=list(dict.fromkeys(base_paths))
+
+    if learned and learned.get("path") and not manual:
+        paths=[learned["path"]]+[x for x in paths if x!=learned["path"]]
 
     if deep:
         deep_paths=[
@@ -748,6 +820,10 @@ def test_rtsp_config(d):
         paths=list(dict.fromkeys(paths+deep_paths))
 
     transports=["tcp","udp","auto"]
+    if learned and learned.get("transport"):
+        t=learned["transport"]
+        transports=[t]+[x for x in transports if x!=t]
+
     attempts=[]
     counters={}
     started=time.time()
@@ -756,7 +832,7 @@ def test_rtsp_config(d):
         url=rtsp_url(ip,port,path,user,password)
         for transport in transports:
             result=ffprobe_rtsp(url,timeout=8,transport=transport)
-            msg=result.get("message","")
+            msg=sanitize_rtsp_text(result.get("message",""),user,password)
             kind=classify_rtsp_error(msg)
             counters[kind]=counters.get(kind,0)+1
 
@@ -770,15 +846,20 @@ def test_rtsp_config(d):
 
             if result.get("ok"):
                 elapsed=round(time.time()-started,1)
+                learned_entry=save_learned_camera(
+                    ip,port,preset,path,transport,result.get("stream",{})
+                )
                 return {
                     "ok":True,
                     "preset":preset,
                     "deep":deep,
+                    "learned":True,
+                    "learned_profile":learned_entry,
                     "path":path,
                     "transport":transport,
                     "stream":result.get("stream",{}),
                     "streams":result.get("streams",[]),
-                    "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
+                    "safe_url":rtsp_url(ip,port,path,"***","***" if password else ""),
                     "attempts_count":len(attempts),
                     "elapsed_seconds":elapsed,
                     "attempts":attempts
@@ -805,6 +886,7 @@ def test_rtsp_config(d):
         "error_code":error_code,
         "preset":preset,
         "deep":deep,
+        "learned_profile":learned,
         "message":message,
         "attempts_count":len(attempts),
         "elapsed_seconds":round(time.time()-started,1),
@@ -897,6 +979,10 @@ def add_rtsp_camera(d):
         "password":str(d.get("password","")),
         "path":tested.get("path"),
         "transport":tested.get("transport","tcp"),
+        "codec":(tested.get("stream") or {}).get("codec_name"),
+        "width":(tested.get("stream") or {}).get("width"),
+        "height":(tested.get("stream") or {}).get("height"),
+        "last_test":time.strftime("%Y-%m-%d %H:%M:%S"),
         "verified":True,
         "status":"online",
         "stream":tested.get("stream",{}),
@@ -978,7 +1064,7 @@ class H(BaseHTTPRequestHandler):
     def do_OPTIONS(self): self.js({"ok":True})
     def do_GET(self):
         u=urlparse(self.path)
-        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
+        routes={"/api/status":lambda:status(),"/api/house":lambda:house(),"/api/connect/devices":lambda:{"items":load(DEVICES,[]),"summary":connect_summary()},"/api/connect/rooms":lambda:{"items":connect_summary().get("rooms",[]),"names":load(ROOMS,[])},"/api/connect/network":lambda:load(NETWORK,{}),"/api/discovery":lambda:load(NETWORK,{}),"/api/discovery/state":lambda:load(DISCOVERY_STATE,{}),"/api/connect/tuya/config":lambda:load(TUYA_CFG,{}),"/api/connect/tuya/cache":lambda:load(TUYA_CACHE,{}),"/api/jarvis":lambda:load(JARVIS,{}),"/api/cameras":lambda:{"items":[{**x,"password":"***" if x.get("password") else ""} for x in load(CAMERAS,[])]},"/api/camera-profiles":lambda:camera_profiles(),"/api/cameras/learned":lambda:{"items":list(learned_camera_profiles().values())},"/api/events":lambda:{"items":load(EVENTS,[])},"/api/notifications":lambda:{"items":load(NOTES,[])},"/api/system/diagnostic":lambda:{"status":status(),"house":house(),"network":load(NETWORK,{}),"discovery_state":load(DISCOVERY_STATE,{}),"tuya":load(TUYA_CFG,{}),"df":run("df -h"),"ip_neigh":run("ip neigh show"),"log":(LOGS/"api.log").read_text(errors="ignore")[-8000:] if (LOGS/"api.log").exists() else ""}}
         if u.path in routes: return self.js(routes[u.path]())
         self.js({"error":"rota não encontrada"},404)
     def do_POST(self):
@@ -1022,6 +1108,13 @@ class H(BaseHTTPRequestHandler):
         if u.path=="/api/cameras/xiaomi/xiaofang":
             dev=d.get("device",d)
             return self.js({"ok":True,"xiaomi":xiaomi_xiaofang_probe(dev)})
+        if u.path=="/api/cameras/snapshot":
+            camera_id=str(d.get("id",""))
+            camera=next((x for x in load(CAMERAS,[]) if str(x.get("id"))==camera_id),None)
+            if not camera:
+                return self.js({"ok":False,"message":"Câmera não encontrada."})
+            return self.js(camera_snapshot(camera))
+
 
 
         if u.path=="/api/cameras/delete":

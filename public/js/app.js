@@ -421,6 +421,8 @@ function renderCameraTestResult(r){
   setText("camera-test-result",JSON.stringify(r,null,2));
 }
 
+let lastSuccessfulCameraTest=null;
+
 async function testCameraRTSP(deep=false){
   const status=el("camera-test-status");
   const progress=el("camera-test-progress");
@@ -443,6 +445,11 @@ async function testCameraRTSP(deep=false){
       body:JSON.stringify(payload)
     });
     renderCameraTestResult(r);
+    if(r.ok){
+      lastSuccessfulCameraTest=r;
+      if(el('cam-path')) el('cam-path').value=r.path||'';
+      toast('Configuração aprendida: '+(r.path||'')+' via '+String(r.transport||'auto').toUpperCase());
+    }
     toast(r.ok?"Vídeo RTSP validado":(r.error_code==="unauthorized"?"Usuário ou senha RTSP recusados":"Stream não validado"));
   }catch(e){
     if(progress) progress.classList.add("hidden");
@@ -456,7 +463,14 @@ async function testCameraRTSP(deep=false){
 async function saveCameraRTSP(){
   setText("camera-test-result","Testando e adicionando...");
   try{
-    const payload=cameraPayload(); payload.deep=true;
+    const payload=cameraPayload();
+    if(lastSuccessfulCameraTest?.ok){
+      payload.path=lastSuccessfulCameraTest.path;
+      payload.transport=lastSuccessfulCameraTest.transport;
+      payload.deep=false;
+    }else{
+      payload.deep=true;
+    }
     const r=await safeJson(apiBase()+"/api/cameras/rtsp/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     setText("camera-test-result",JSON.stringify(r,null,2));
     if(r.ok){
@@ -567,8 +581,51 @@ function renderXiaomiXiaoFang(dev){
 async function loadCameraManager(){
   const cams=await safeJson(apiBase()+"/api/cameras?"+Date.now());
   const profiles=await safeJson(apiBase()+"/api/camera-profiles?"+Date.now());
-  setHTML("camera-manager-list",(cams.items||[]).map(c=>`<div class="module"><h3>📹 ${c.name||c.ip}</h3><p>${c.status||"desconhecido"}</p><small>IP ${c.ip||"--"}:${c.port||554}<br>${c.room||"Sem ambiente"}<br>Caminho ${c.path||"--"}</small><br><button class="danger" onclick="deleteCamera('${c.id}')">Excluir</button></div>`).join("")||"<p>Nenhuma câmera adicionada.</p>");
-  setHTML("camera-profile-list",(profiles.profiles||[]).map(p=>`<div class="module"><h3>${p.name}</h3><p>${(p.rtsp_paths||[]).length} caminhos RTSP</p><small>Portas: ${(p.ports||[]).join(", ")}<br>${p.notes||""}</small></div>`).join(""));
+
+  setHTML("camera-manager-list",(cams.items||[]).map(c=>`
+    <div class="module camera-managed-card">
+      <div class="camera-preview" id="preview-${c.id}">
+        <span>Sem prévia</span>
+      </div>
+      <h3>📹 ${c.name||c.ip}</h3>
+      <p class="${c.status==='online'?'camera-card-online':''}">${c.status||"cadastrada"}</p>
+      <small>
+        IP ${c.ip||"--"}:${c.port||554}<br>
+        ${c.room||"Sem ambiente"}<br>
+        ${c.path||"--"} • ${(c.transport||"--").toUpperCase()}<br>
+        ${c.codec||"--"} ${c.width&&c.height?`• ${c.width}×${c.height}`:""}
+      </small>
+      <div class="camera-card-actions">
+        <button onclick="loadCameraSnapshot('${c.id}')">Atualizar imagem</button>
+        <button class="danger" onclick="deleteCamera('${c.id}')">Excluir</button>
+      </div>
+    </div>`).join("")||"<p>Nenhuma câmera adicionada.</p>");
+
+  setHTML("camera-profile-list",(profiles.profiles||[]).map(p=>`
+    <div class="module">
+      <h3>${p.name}</h3>
+      <p>${(p.rtsp_paths||[]).length} caminhos RTSP</p>
+      <small>Portas: ${(p.ports||[]).join(", ")}<br>${p.notes||""}</small>
+    </div>`).join(""));
+}
+
+async function loadCameraSnapshot(id){
+  const box=el("preview-"+id);
+  if(box) box.innerHTML="<span>Capturando...</span>";
+  try{
+    const r=await safeJson(apiBase()+"/api/cameras/snapshot",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id})
+    });
+    if(r.ok && r.data){
+      box.innerHTML=`<img src="data:${r.mime||'image/jpeg'};base64,${r.data}" alt="Prévia da câmera">`;
+    }else{
+      box.innerHTML=`<span>${r.message||"Snapshot indisponível"}</span>`;
+    }
+  }catch(e){
+    if(box) box.innerHTML=`<span>Erro: ${e.message}</span>`;
+  }
 }
 
 async function deleteCamera(id){

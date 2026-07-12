@@ -1,5 +1,5 @@
 {
-  "version": "14.3",
+  "version": "14.4",
   "profiles": [
     {
       "id": "yoosee",
@@ -42,7 +42,7 @@
         8080,
         8899
       ],
-      "notes": "Use a senha NVR/RTSP do app. O Camera Manager testa TCP, UDP e modo automático.",
+      "notes": "Perfil aprendido: priorizar /onvif2 por UDP quando validado nesta rede.",
       "transports": [
         "tcp",
         "udp",
@@ -52,6 +52,15 @@
         "Verificar resposta OPTIONS/DESCRIBE",
         "Identificar autenticação Basic/Digest",
         "Confirmar SDP antes de testar vídeo"
+      ],
+      "preferred_paths": [
+        "/onvif2",
+        "/onvif1"
+      ],
+      "preferred_transports": [
+        "udp",
+        "tcp",
+        "auto"
       ]
     },
     {
