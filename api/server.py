@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION="Open Home OS v13.5 RTSP Camera Setup"
-BUILD="000340"
+VERSION="Open Home OS v13.6 Yoosee RTSP/ONVIF"
+BUILD="000360"
 
 HOME=Path.home()
 BASE=HOME/"OpenHomeOS"
@@ -323,11 +323,29 @@ def tuya_sync():
 
 
 RTSP_COMMON_PATHS=[
-    "/stream1","/stream2","/live/ch00_0","/live/ch00_1","/live/ch0",
+    "/onvif1","/onvif2",
+    "/live/ch00_0","/live/ch00_1","/live/ch0",
+    "/stream1","/stream2",
+    "/h264/ch1/main/av_stream","/h264/ch1/sub/av_stream",
+    "/h264Preview_01_main","/h264Preview_01_sub",
     "/cam/realmonitor?channel=1&subtype=0","/cam/realmonitor?channel=1&subtype=1",
-    "/h264","/11","/12","/onvif1","/videoMain","/videoSub",
-    "/Streaming/Channels/101","/Streaming/Channels/102"
+    "/Streaming/Channels/101","/Streaming/Channels/102",
+    "/11","/12","/videoMain","/videoSub","/h264"
 ]
+
+RTSP_PRESETS={
+    "auto":RTSP_COMMON_PATHS,
+    "yoosee":[
+        "/onvif1","/onvif2",
+        "/live/ch00_0","/live/ch00_1",
+        "/stream1","/stream2",
+        "/h264/ch1/main/av_stream","/h264/ch1/sub/av_stream",
+        "/11","/12"
+    ],
+    "hikvision":["/Streaming/Channels/101","/Streaming/Channels/102","/h264/ch1/main/av_stream"],
+    "dahua":["/cam/realmonitor?channel=1&subtype=0","/cam/realmonitor?channel=1&subtype=1"],
+    "generic":["/stream1","/stream2","/onvif1","/11","/12"]
+}
 
 def rtsp_url(ip,port,path,user="",password=""):
     path=(path or "/stream1").strip()
@@ -367,17 +385,131 @@ def test_rtsp_config(d):
     user=str(d.get("username",""))
     password=str(d.get("password",""))
     manual=str(d.get("path","")).strip()
-    paths=[manual] if manual else RTSP_COMMON_PATHS
+    preset=str(d.get("preset","auto") or "auto").lower()
+
+    paths=[manual] if manual else RTSP_PRESETS.get(preset,RTSP_COMMON_PATHS)
+    # Preserve order but remove duplicates.
+    paths=list(dict.fromkeys(paths))
+
     attempts=[]
+    unauthorized=0
+    connection_errors=0
+
     for path in paths:
         url=rtsp_url(ip,port,path,user,password)
         result=ffprobe_rtsp(url)
-        attempts.append({"path":path,"ok":result.get("ok",False),"message":result.get("message","")})
+        msg=result.get("message","")
+        lower=msg.lower()
+
+        if "401" in lower or "unauthorized" in lower:
+            unauthorized+=1
+        elif "connection refused" in lower or "timed out" in lower or "tempo esgotado" in lower:
+            connection_errors+=1
+
+        attempts.append({
+            "path":path,
+            "ok":result.get("ok",False),
+            "message":msg
+        })
+
         if result.get("ok"):
-            return {"ok":True,"path":path,"stream":result.get("stream",{}),
-                    "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
-                    "attempts":attempts}
-    return {"ok":False,"message":"Nenhum caminho RTSP respondeu com as credenciais fornecidas.","attempts":attempts}
+            return {
+                "ok":True,
+                "preset":preset,
+                "path":path,
+                "stream":result.get("stream",{}),
+                "safe_url":rtsp_url(ip,port,path,user,"***" if password else ""),
+                "attempts":attempts
+            }
+
+    if unauthorized:
+        message=(
+            "A câmera respondeu, mas recusou o usuário ou a senha RTSP "
+            f"em {unauthorized} tentativa(s). Confira a senha NVR/RTSP definida no aplicativo Yoosee "
+            "e o usuário exigido pelo firmware."
+        )
+        error_code="unauthorized"
+    elif connection_errors==len(attempts) and attempts:
+        message="Não foi possível estabelecer conexão RTSP com a câmera."
+        error_code="connection"
+    else:
+        message="Nenhum caminho RTSP respondeu com as credenciais fornecidas."
+        error_code="path_not_found"
+
+    return {
+        "ok":False,
+        "error_code":error_code,
+        "preset":preset,
+        "message":message,
+        "attempts":attempts
+    }
+
+def onvif_probe(d):
+    """Checks common ONVIF service endpoints without guessing credentials."""
+    ip=str(d.get("ip","")).strip()
+    if not ip:
+        return {"ok":False,"message":"IP obrigatório."}
+
+    ports=[]
+    for value in d.get("onvif_ports",[80,5000,8000,8080,8899]):
+        try:
+            value=int(value)
+            if value not in ports:
+                ports.append(value)
+        except Exception:
+            pass
+
+    endpoints=[
+        "/onvif/device_service",
+        "/onvif/Device_service",
+        "/onvif/services",
+        "/device_service"
+    ]
+    results=[]
+
+    for port in ports:
+        for endpoint in endpoints:
+            scheme="https" if port==443 else "http"
+            url=f"{scheme}://{ip}:{port}{endpoint}"
+            try:
+                req=urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent":"OpenHomeOS/13.6",
+                        "Content-Type":"application/soap+xml; charset=utf-8"
+                    },
+                    method="GET"
+                )
+                with urllib.request.urlopen(req,timeout=2.2) as resp:
+                    code=getattr(resp,"status",200)
+                    sample=resp.read(700).decode("utf-8","ignore")
+                    results.append({"url":url,"status":code,"sample":sample[:250]})
+                    if code in [200,401,405]:
+                        return {
+                            "ok":True,
+                            "url":url,
+                            "status":code,
+                            "auth_required":code==401,
+                            "message":"Serviço ONVIF localizado."
+                        }
+            except urllib.error.HTTPError as e:
+                results.append({"url":url,"status":e.code})
+                if e.code in [401,405]:
+                    return {
+                        "ok":True,
+                        "url":url,
+                        "status":e.code,
+                        "auth_required":e.code==401,
+                        "message":"Serviço ONVIF localizado; autenticação pode ser necessária."
+                    }
+            except Exception as e:
+                results.append({"url":url,"error":str(e)[:160]})
+
+    return {
+        "ok":False,
+        "message":"Serviço ONVIF não confirmado nas portas comuns.",
+        "results":results
+    }
 
 def add_rtsp_camera(d):
     tested=test_rtsp_config(d)
@@ -509,6 +641,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(test_rtsp_config(d))
         if u.path=="/api/cameras/rtsp/add":
             return self.js(add_rtsp_camera(d))
+        if u.path=="/api/cameras/onvif/probe":
+            return self.js(onvif_probe(d))
         if u.path=="/api/cameras/delete":
             cid=d.get("id")
             save(CAMERAS,[x for x in load(CAMERAS,[]) if x.get("id")!=cid])

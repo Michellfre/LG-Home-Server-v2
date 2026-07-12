@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1351"></head><body>
-<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v13.5 RTSP Camera</p></div></div>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Home OS v13.5</title><link rel="stylesheet" href="css/style.css?v=1360"></head><body>
+<aside class="sidebar"><div class="brand"><div class="logo">OH</div><div><h1>Open Home OS</h1><p>v13.6 Yoosee RTSP</p></div></div>
 <a class="active" onclick="showPage('dashboard')">🏠 Dashboard</a><a onclick="showPage('connect')">🔌 Open Home Connect</a><a onclick="showPage('rooms')">🏘️ Ambientes</a><a onclick="showPage('setup')">🧙 Instalação</a><a onclick="showPage('jarvis')">🤖 Jarvis</a><a onclick="showPage('network')">📡 Discovery</a><a onclick="showPage('tv')">📺 TV Mode</a><a onclick="showPage('system')">⚙️ Sistema</a></aside>
 <main><header><div><h2 id="page-title">Dashboard Inteligente</h2><p>Open Home OS v13.5 com correção JavaScript e Discovery PRO.</p></div><button class="notify" onclick="showPage('notifications')">🔔 <span id="notify-count">0</span></button><span class="pill">● Online</span></header>
 
@@ -28,16 +28,16 @@
       <label>Nome<input id="cam-name" placeholder="Câmera Garagem"></label>
       <label>Ambiente<input id="cam-room" placeholder="Garagem"></label>
       <label>IP<input id="cam-ip" readonly></label>
-      <label>Porta<input id="cam-port" type="number" value="554"></label>
-      <label>Usuário<input id="cam-user" autocomplete="username" placeholder="admin"></label>
+      <label>Porta RTSP<input id="cam-port" type="number" value="554"></label>
+      <label>Perfil<select id="cam-preset"><option value="yoosee">Yoosee</option><option value="auto">Automático</option><option value="generic">Genérico</option><option value="hikvision">Hikvision</option><option value="dahua">Dahua/Intelbras</option></select></label><label>Usuário RTSP<input id="cam-user" autocomplete="username" placeholder="admin"></label>
       <label>Senha<input id="cam-password" type="password" autocomplete="current-password"></label>
       <label class="wide">Caminho RTSP opcional<input id="cam-path" placeholder="Deixe vazio para testar caminhos comuns"></label>
     </div>
     <div class="modal-actions">
-      <button onclick="testCameraRTSP()">Testar vídeo</button>
+      <button onclick="probeCameraONVIF()">Detectar ONVIF</button><button onclick="testCameraRTSP()">Testar vídeo</button>
       <button class="ok" onclick="saveCameraRTSP()">Testar e adicionar</button>
     </div>
     <pre id="camera-test-result">Aguardando teste...</pre>
   </div>
 </div>
-<div id="toast"></div><script src="js/app.js?v=1351"></script></body></html>
+<div id="toast"></div><script src="js/app.js?v=1360"></script></body></html>

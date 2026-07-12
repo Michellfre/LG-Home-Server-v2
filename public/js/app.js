@@ -280,7 +280,8 @@ function openCameraSetup(index){
   el("cam-room").value="Garagem";
   el("cam-ip").value=dev.ip||"";
   el("cam-port").value=554;
-  el("cam-user").value="";
+  if(el("cam-preset")) el("cam-preset").value="yoosee";
+  el("cam-user").value="admin";
   el("cam-password").value="";
   el("cam-path").value="";
 
@@ -317,17 +318,35 @@ function cameraPayload(){
     room:el("cam-room")?.value||"Sem ambiente",
     ip:el("cam-ip")?.value||"",
     port:Number(el("cam-port")?.value||554),
+    preset:el("cam-preset")?.value||"auto",
     username:el("cam-user")?.value||"",
     password:el("cam-password")?.value||"",
     path:el("cam-path")?.value||""
   };
 }
+async function probeCameraONVIF(){
+  setText("camera-test-result","Procurando serviço ONVIF...");
+  try{
+    const payload=cameraPayload();
+    payload.onvif_ports=[80,5000,8000,8080,8899];
+    const r=await safeJson(apiBase()+"/api/cameras/onvif/probe",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    setText("camera-test-result",JSON.stringify(r,null,2));
+    toast(r.ok?"Serviço ONVIF localizado":"ONVIF não confirmado");
+  }catch(e){
+    setText("camera-test-result","Erro ONVIF: "+e.message);
+  }
+}
+
 async function testCameraRTSP(){
   setText("camera-test-result","Testando RTSP. Aguarde...");
   try{
     const r=await safeJson(apiBase()+"/api/cameras/rtsp/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cameraPayload())});
     setText("camera-test-result",JSON.stringify(r,null,2));
-    toast(r.ok?"Vídeo RTSP validado":"Stream não validado");
+    toast(r.ok?"Vídeo RTSP validado":(r.error_code==="unauthorized"?"Usuário ou senha RTSP recusados":"Stream não validado"));
   }catch(e){
     setText("camera-test-result","Erro: "+e.message);
   }
